@@ -46,6 +46,15 @@ a { color: var(--accent); }
 .topbar a.logout { color: #c9d6e0; text-decoration: none; }
 .topbar a.logout:hover { text-decoration: underline; }
 
+.view-toggle {
+  display: flex; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 2px;
+}
+.view-toggle button {
+  border: none; background: transparent; color: #c9d6e0; padding: 6px 12px; border-radius: 6px;
+  cursor: pointer; font-size: 0.82rem; font-weight: 600;
+}
+.view-toggle button.active { background: #fff; color: var(--ink); }
+
 .filters {
   background: var(--paper);
   border-bottom: 1px solid var(--line);
@@ -145,6 +154,46 @@ a { color: var(--accent); }
 .lead-card .stale { color: var(--danger); font-weight: 600; }
 
 .empty-col { padding: 20px 8px; text-align: center; color: var(--ink-soft); font-size: 0.82rem; }
+
+/* ---------- Métricas ---------- */
+.metrics-scroll { flex: 1; overflow-y: auto; padding: 20px; }
+
+.metrics-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-bottom: 20px;
+}
+.metric-card {
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px;
+}
+.metric-label { font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 6px; }
+.metric-value { font-size: 1.7rem; font-weight: 700; color: var(--ink); }
+.metric-value-text { font-size: 1.1rem; }
+.metric-sub { font-size: 0.76rem; color: var(--ink-soft); margin-top: 4px; }
+
+.metrics-section {
+  background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.metrics-section h3 {
+  margin: 0 0 14px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-soft);
+}
+
+.metrics-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) { .metrics-columns { grid-template-columns: 1fr; } }
+
+.funnel { display: flex; flex-direction: column; gap: 10px; }
+.funnel-row { display: grid; grid-template-columns: 140px 1fr 40px; align-items: center; gap: 10px; }
+.funnel-label { font-size: 0.84rem; color: var(--ink); }
+.funnel-bar-track { background: var(--bg); border-radius: 6px; height: 18px; overflow: hidden; }
+.funnel-bar { height: 100%; border-radius: 6px; min-width: 3px; transition: width 0.3s ease; }
+.funnel-count { text-align: right; font-size: 0.84rem; font-weight: 600; color: var(--ink-soft); }
+
+.metrics-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.metrics-table th {
+  text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
+  color: var(--ink-soft); border-bottom: 1px solid var(--line); padding: 6px 8px;
+}
+.metrics-table td { padding: 8px; border-bottom: 1px solid var(--line); }
+.metrics-table tr:last-child td { border-bottom: none; }
 
 /* ---------- Drawer ---------- */
 .drawer-backdrop {

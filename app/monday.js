@@ -1,0 +1,218 @@
+// Cliente mínimo para a API GraphQL v2 do monday.com.
+// Roda só no servidor (rotas de API / server components) — o token nunca
+// chega ao navegador do usuário.
+
+const MONDAY_API_URL = 'https://api.monday.com/v2';
+
+async function mondayRequest(query, variables = {}) {
+  const token = process.env.MONDAY_API_TOKEN;
+  if (!token) {
+    throw new Error(
+      'MONDAY_API_TOKEN não está configurado. Defina essa variável de ambiente com um token de API pessoal do monday.com.'
+    );
+  }
+
+  const headers = {
+    Authorization: token,
+    'Content-Type': 'application/json',
+  };
+  if (process.env.MONDAY_API_VERSION) {
+    headers['API-Version'] = process.env.MONDAY_API_VERSION;
+  }
+
+  const res = await fetch(MONDAY_API_URL, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ query, variables }),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`monday.com API respondeu ${res.status}: ${body.slice(0, 500)}`);
+  }
+
+  const json = await res.json();
+
+  if (json.errors && json.errors.length > 0) {
+    const message = json.errors.map((e) => e.message).join('; ');
+    throw new Error(`monday.com API error: ${message}`);
+  }
+
+  return json.data;
+}
+
+// Converte o array column_values (id/type/text/value) num objeto
+// { [columnId]: { text, value, type } } fácil de consumir na UI.
+function indexColumnValues(columnValues) {
+  const map = {};
+  for (const cv of columnValues || []) {
+    let parsedValue = null;
+    if (cv.value) {
+      try {
+        parsedValue = JSON.parse(cv.value);
+      } catch {
+        parsedValue = cv.value;
+      }
+    }
+    map[cv.id] = { text: cv.text, value: parsedValue, type: cv.type };
+  }
+  return map;
+}
+
+function mapItem(item) {
+  return {
+    id: item.id,
+    name: item.name,
+    createdAt: item.created_at,
+    updatedAt: item.updated_at,
+    group: item.group ? { id: item.group.id, title: item.group.title } : null,
+    columns: indexColumnValues(item.column_values),
+  };
+}
+
+export async function fetchAllItems(boardId, columnIds) {
+  const query = `
+    query GetItems($boardId: ID!, $cursor: String, $limit: Int!, $columnIds: [String!]) {
+      boards(ids: [$boardId]) {
+        items_page(limit: $limit, cursor: $cursor) {
+          cursor
+          items {
+            id
+            name
+            created_at
+            updated_at
+            group { id title }
+            column_values(ids: $columnIds) {
+              id
+              type
+              text
+              value
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  let cursor = null;
+  const items = [];
+
+  // Evita loop infinito se algo vier estranho da API.
+  for (let page = 0; page < 50; page++) {
+    const data = await mondayRequest(query, {
+      boardId,
+      cursor,
+      limit: 500,
+      columnIds,
+    });
+    const board = data.boards && data.boards[0];
+    if (!board) break;
+
+    const page_ = board.items_page;
+    for (const item of page_.items) items.push(mapItem(item));
+
+    cursor = page_.cursor;
+    if (!cursor) break;
+  }
+
+  return items;
+}
+
+export async function fetchUsers() {
+  const query = `
+    query GetUsers {
+      users(limit: 200) {
+        id
+        name
+        photo_thumb_small
+        enabled
+      }
+    }
+  `;
+  const data = await mondayRequest(query);
+  return (data.users || [])
+    .filter((u) => u.enabled !== false)
+    .map((u) => ({ id: u.id, name: u.name, photo: u.photo_thumb_small }));
+}
+
+export async function updateItemColumns(boardId, itemId, columnValues) {
+  const query = `
+    mutation ChangeColumns($boardId: ID!, $itemId: ID!, $columnValues: JSON!) {
+      change_multiple_column_values(
+        board_id: $boardId
+        item_id: $itemId
+        column_values: $columnValues
+      ) {
+        id
+      }
+    }
+  `;
+  const data = await mondayRequest(query, {
+    boardId,
+    itemId,
+    columnValues: JSON.stringify(columnValues),
+  });
+  return data.change_multiple_column_values;
+}
+
+export async function createLead(boardId, groupId, name, columnValues) {
+  const query = `
+    mutation CreateItem($boardId: ID!, $groupId: String, $itemName: String!, $columnValues: JSON) {
+      create_item(
+        board_id: $boardId
+        group_id: $groupId
+        item_name: $itemName
+        column_values: $columnValues
+      ) {
+        id
+      }
+    }
+  `;
+  const data = await mondayRequest(query, {
+    boardId,
+    groupId: groupId || null,
+    itemName: name,
+    columnValues: columnValues ? JSON.stringify(columnValues) : null,
+  });
+  return data.create_item;
+}
+
+export async function fetchItemNotes(itemId) {
+  const query = `
+    query GetNotes($itemId: [ID!]) {
+      items(ids: $itemId) {
+        updates(limit: 100) {
+          id
+          text_body
+          created_at
+          creator { id name photo_thumb_small }
+        }
+      }
+    }
+  `;
+  const data = await mondayRequest(query, { itemId: [itemId] });
+  const item = data.items && data.items[0];
+  if (!item) return [];
+  return item.updates
+    .map((u) => ({
+      id: u.id,
+      text: u.text_body,
+      createdAt: u.created_at,
+      author: u.creator ? u.creator.name : 'Alguém',
+      authorPhoto: u.creator ? u.creator.photo_thumb_small : null,
+    }))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+export async function addItemNote(itemId, body) {
+  const query = `
+    mutation AddNote($itemId: ID!, $body: String!) {
+      create_update(item_id: $itemId, body: $body) {
+        id
+      }
+    }
+  `;
+  const data = await mondayRequest(query, { itemId, body });
+  return data.create_update;
+}
