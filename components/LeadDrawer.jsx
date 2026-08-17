@@ -333,18 +333,20 @@ export default function LeadDrawer({ item, meta, onClose, onSaved }) {
         <div className="drawer-section">
           <h3>Anotações</h3>
           <textarea
+            className="note-textarea"
             placeholder="Registrar uma ligação, um combinado com o cliente..."
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
           />
-          <button
-            className="btn btn-secondary"
-            style={{ marginTop: 8 }}
-            disabled={addingNote || !noteText.trim()}
-            onClick={addNote}
-          >
-            {addingNote ? 'Salvando...' : 'Adicionar anotação'}
-          </button>
+          <div className="note-actions">
+            <button
+              className="btn btn-secondary"
+              disabled={addingNote || !noteText.trim()}
+              onClick={addNote}
+            >
+              {addingNote ? 'Salvando...' : 'Adicionar anotação'}
+            </button>
+          </div>
 
           <div className="notes-list">
             {notes === null && <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>Carregando...</div>}
