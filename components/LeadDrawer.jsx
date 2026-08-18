@@ -20,7 +20,7 @@ const QUALIFY_FIELDS = [
   { key: 'proximoFollowUp', label: 'Urgência (próximo follow-up)' },
 ];
 
-export default function LeadDrawer({ item, meta, onClose, onSaved }) {
+export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }) {
   const [form, setForm] = useState(() => ({ ...item }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -86,18 +86,23 @@ export default function LeadDrawer({ item, meta, onClose, onSaved }) {
 
   async function addNote() {
     if (!noteText.trim()) return;
+    // O monday.com sempre registra a atualização como vindo da conta dona do
+    // token de API — então, pra saber de verdade quem escreveu, colocamos o
+    // nome de quem está logado no próprio texto da anotação.
+    const authorName = currentUser?.name;
+    const fullText = authorName ? `${authorName}: ${noteText.trim()}` : noteText.trim();
     setAddingNote(true);
     setError('');
     try {
       const res = await fetch(`/api/items/${item.id}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: noteText.trim() }),
+        body: JSON.stringify({ text: fullText }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar anotação.');
       setNotes((prev) => [
-        { id: `tmp-${Date.now()}`, text: noteText.trim(), author: 'Você', createdAt: new Date().toISOString() },
+        { id: `tmp-${Date.now()}`, text: fullText, author: authorName || 'Você', createdAt: new Date().toISOString() },
         ...(prev || []),
       ]);
       setNoteText('');

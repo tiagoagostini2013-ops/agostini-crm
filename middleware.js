@@ -5,7 +5,7 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login'];
+const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/context', '/api/auth/bootstrap'];
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;

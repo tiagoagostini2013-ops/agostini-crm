@@ -31,6 +31,7 @@ export default function Dashboard() {
   const [filters, setFilters] = useState({ responsavel: '', segmento: '', canal: '', search: '' });
   const [view, setView] = useState('kanban');
   const [showNewLead, setShowNewLead] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
 
   async function loadAll() {
     setLoading(true);
@@ -50,8 +51,18 @@ export default function Dashboard() {
     }
   }
 
+  async function loadMe() {
+    try {
+      const res = await fetch('/api/auth/me');
+      if (res.ok) setCurrentUser(await res.json());
+    } catch {
+      // silencioso — não é crítico pra usar o painel
+    }
+  }
+
   useEffect(() => {
     loadAll();
+    loadMe();
   }, []);
 
   const usersById = useMemo(() => {
@@ -154,6 +165,12 @@ export default function Dashboard() {
           <button className="btn btn-secondary" onClick={loadAll} disabled={loading}>
             {loading ? 'Atualizando...' : '↻ Atualizar'}
           </button>
+          {currentUser?.admin && (
+            <a className="logout" href="/admin/users">
+              Gerenciar usuários
+            </a>
+          )}
+          {currentUser?.name && <span className="current-user">Olá, {currentUser.name}</span>}
           <a className="logout" href="#" onClick={(e) => { e.preventDefault(); logout(); }}>
             Sair
           </a>
@@ -305,6 +322,7 @@ export default function Dashboard() {
         <LeadDrawer
           item={selectedItem}
           meta={meta}
+          currentUser={currentUser}
           onClose={() => setSelectedId(null)}
           onSaved={(id, patch) => updateLocalItem(id, patch)}
         />

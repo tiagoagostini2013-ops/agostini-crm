@@ -45,6 +45,7 @@ a { color: var(--accent); }
 .topbar .actions { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
 .topbar a.logout { color: #c9d6e0; text-decoration: none; }
 .topbar a.logout:hover { text-decoration: underline; }
+.current-user { color: #fff; font-weight: 600; }
 
 .view-toggle {
   display: flex; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 2px;
