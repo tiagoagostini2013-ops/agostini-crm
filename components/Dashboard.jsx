@@ -6,6 +6,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import LeadDrawer from './LeadDrawer';
 import NewLeadModal from './NewLeadModal';
 import Metrics from './Metrics';
+import Agenda, { computeAgenda } from './Agenda';
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -74,6 +75,9 @@ export default function Dashboard() {
     });
   }, [items, filters]);
 
+  const agenda = useMemo(() => computeAgenda(items || []), [items]);
+  const alertCount = agenda.atrasados.length + agenda.semData.length;
+
   const grouped = useMemo(() => {
     const map = {};
     (meta?.stages || []).forEach((s) => (map[s.value] = []));
@@ -134,6 +138,9 @@ export default function Dashboard() {
             <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
               Kanban
             </button>
+            <button className={view === 'agenda' ? 'active' : ''} onClick={() => setView('agenda')}>
+              Agenda{alertCount > 0 && <span className="toggle-badge">{alertCount}</span>}
+            </button>
             <button className={view === 'metrics' ? 'active' : ''} onClick={() => setView('metrics')}>
               Métricas
             </button>
@@ -154,6 +161,17 @@ export default function Dashboard() {
       </div>
 
       {error && <div className="banner banner-error">{error}</div>}
+
+      {!error && alertCount > 0 && view !== 'agenda' && (
+        <div className="banner banner-warning">
+          ⚠ {agenda.atrasados.length > 0 && <>{agenda.atrasados.length} lead(s) com follow-up atrasado</>}
+          {agenda.atrasados.length > 0 && agenda.semData.length > 0 && ' e '}
+          {agenda.semData.length > 0 && <>{agenda.semData.length} sem follow-up agendado</>} precisam de atenção.{' '}
+          <button className="btn-link" onClick={() => setView('agenda')}>
+            Ver agenda →
+          </button>
+        </div>
+      )}
 
       {meta && (
         <div className="filters">
@@ -205,6 +223,12 @@ export default function Dashboard() {
       {meta && items && view === 'metrics' && (
         <div className="metrics-scroll">
           <Metrics items={filteredItems} meta={meta} usersById={usersById} />
+        </div>
+      )}
+
+      {meta && items && view === 'agenda' && (
+        <div className="metrics-scroll">
+          <Agenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
         </div>
       )}
 

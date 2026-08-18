@@ -54,6 +54,10 @@ a { color: var(--accent); }
   cursor: pointer; font-size: 0.82rem; font-weight: 600;
 }
 .view-toggle button.active { background: #fff; color: var(--ink); }
+.toggle-badge {
+  display: inline-block; background: var(--danger); color: #fff; border-radius: 999px;
+  font-size: 0.68rem; font-weight: 700; padding: 1px 6px; margin-left: 5px;
+}
 
 .filters {
   background: var(--paper);
@@ -195,6 +199,27 @@ a { color: var(--accent); }
 .metrics-table td { padding: 8px; border-bottom: 1px solid var(--line); }
 .metrics-table tr:last-child td { border-bottom: none; }
 
+/* ---------- Agenda ---------- */
+.agenda-view { display: flex; flex-direction: column; gap: 16px; }
+.agenda-section.agenda-danger h3 { color: var(--danger); }
+.agenda-count {
+  display: inline-block; background: var(--bg); color: var(--ink-soft); border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700; padding: 1px 8px; margin-left: 4px;
+}
+.agenda-empty { color: var(--ink-soft); font-size: 0.85rem; padding: 6px 0; }
+.agenda-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 10px 4px; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+.agenda-row:last-child { border-bottom: none; }
+.agenda-row:hover { background: var(--bg); }
+.agenda-row-name { font-weight: 600; font-size: 0.88rem; }
+.agenda-row-sub { font-size: 0.78rem; color: var(--ink-soft); margin-top: 2px; }
+.agenda-row-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.agenda-row-right .valor { font-weight: 700; font-size: 0.85rem; }
+.agenda-row-label { font-size: 0.78rem; color: var(--ink-soft); white-space: nowrap; }
+.agenda-danger .agenda-row-label { color: var(--danger); font-weight: 600; }
+
 /* ---------- Drawer ---------- */
 .drawer-backdrop {
   position: fixed; inset: 0; background: rgba(15,23,32,0.4); z-index: 40;
@@ -265,6 +290,8 @@ a { color: var(--accent); }
 }
 .banner-error { background: #fdecec; color: #a01d33; border-bottom: 1px solid #f5c6cd; }
 .banner-info { background: #eaf5fb; color: #004f70; border-bottom: 1px solid #cfe8f4; }
+.banner-warning { background: #fff8e6; color: #8a6100; border-bottom: 1px solid #ffe6a3; }
+.banner-warning .btn-link { font-weight: 700; }
 
 .loading-screen {
   display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft);
