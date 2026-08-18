@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import LeadDrawer from './LeadDrawer';
+import NewLeadModal from './NewLeadModal';
+import Metrics from './Metrics';
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -26,6 +28,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [filters, setFilters] = useState({ responsavel: '', segmento: '', canal: '', search: '' });
+  const [view, setView] = useState('kanban');
+  const [showNewLead, setShowNewLead] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -126,6 +130,17 @@ export default function Dashboard() {
           🏭 CRM Agostini — Funil de Vendas
         </div>
         <div className="actions">
+          <div className="view-toggle">
+            <button className={view === 'kanban' ? 'active' : ''} onClick={() => setView('kanban')}>
+              Kanban
+            </button>
+            <button className={view === 'metrics' ? 'active' : ''} onClick={() => setView('metrics')}>
+              Métricas
+            </button>
+          </div>
+          <button className="btn btn-primary" onClick={() => setShowNewLead(true)}>
+            + Novo lead
+          </button>
           <a href={`https://agostini-team.monday.com/boards/18404435549`} target="_blank" rel="noreferrer" className="logout">
             Ver no monday.com ↗
           </a>
@@ -187,7 +202,13 @@ export default function Dashboard() {
 
       {loading && !items && <div className="loading-screen">Carregando o funil...</div>}
 
-      {meta && items && (
+      {meta && items && view === 'metrics' && (
+        <div className="metrics-scroll">
+          <Metrics items={filteredItems} meta={meta} usersById={usersById} />
+        </div>
+      )}
+
+      {meta && items && view === 'kanban' && (
         <DragDropContext onDragEnd={handleDragEnd}>
           <div className="board-scroll">
             <div className="board-columns">
@@ -262,6 +283,17 @@ export default function Dashboard() {
           meta={meta}
           onClose={() => setSelectedId(null)}
           onSaved={(id, patch) => updateLocalItem(id, patch)}
+        />
+      )}
+
+      {showNewLead && (
+        <NewLeadModal
+          meta={meta}
+          onClose={() => setShowNewLead(false)}
+          onCreated={() => {
+            setShowNewLead(false);
+            loadAll();
+          }}
         />
       )}
     </div>
