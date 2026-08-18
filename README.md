@@ -93,6 +93,29 @@ As listas de opções (segmentos, cargos, canais, motivos de perda) estão hoje 
 - Aviso visual quando um lead está há mais de 5 dias sem contato.
 - Link direto para abrir o item correspondente no monday.com.
 
+## Suplemento do Word (buscar cliente + vincular proposta)
+
+Como a Agostini vende de tudo, de um equipamento avulso até uma planta inteira, não existe um modelo fixo de proposta — então em vez de "gerar a proposta pronta", o suplemento dá ao vendedor uma ponte para o CRM dentro do próprio Word: buscar o cliente/lead pelo nome, inserir dados dele (empresa, produto, valor etc.) no texto onde o cursor estiver, e — quando a proposta estiver pronta — vincular o arquivo ao lead certo no monday.com com um clique, gerando automaticamente também uma cópia em PDF.
+
+### Como funciona por trás
+
+- É uma página a mais dentro deste mesmo projeto Next.js (`/word-addin`), carregada dentro de um painel lateral do Word (Office Add-in / suplemento). Usa o **mesmo login individual** do painel — na primeira vez que o suplemento abrir, ele pede pra entrar com nome + senha, igual ao painel principal; depois disso, fica logado nesse computador.
+- O arquivo do Word finalizado é anexado na coluna **"Propostas"** do lead, no board CRM Agostini do monday.com (coluna criada automaticamente ao montar essa função).
+- A conversão automática para PDF usa o serviço CloudConvert (opcional — ver `.env.example`). Sem a chave configurada, o suplemento continua funcionando normalmente, só que anexa apenas o `.docx`, sem gerar o PDF sozinho.
+
+### Colocando em funcionamento
+
+1. Depois de fazer o deploy deste projeto atualizado (mesmo processo de sempre — subir pro GitHub, a Vercel republica sozinha), você já tem a URL do painel, tipo `agostini-crm.vercel.app`.
+2. Abra `public/word-addin/manifest.xml` num editor de texto simples e troque **todas** as ocorrências de `PAINEL_URL_AQUI` por esse domínio real (sem repetir `https://`).
+3. (Opcional, para o PDF automático) Crie uma conta grátis em [cloudconvert.com](https://cloudconvert.com), gere uma chave de API, e adicione como `CLOUDCONVERT_API_KEY` nas variáveis de ambiente da Vercel.
+4. Em cada computador de vendas: abra o Word, vá em **Inserir → Suplementos → Meus Suplementos → Carregar Meu Suplemento**, e selecione o `manifest.xml` já ajustado. Isso é necessário porque a licença do Microsoft 365 usada é a pessoal (não a versão empresarial com um administrador central) — então a instalação é manual, uma vez por computador, parecido com o instalador da extensão do WhatsApp.
+5. Depois de instalado, aparece um botão **"Abrir CRM"** na aba Início do Word, que abre o painel lateral do suplemento.
+
+### Limitações a ter em mente
+
+- A conversão para PDF depende de um serviço externo (CloudConvert) porque o Word não oferece, para suplementos, um jeito de exportar o documento aberto como PDF diretamente — por isso os bytes do `.docx` são enviados para o nosso próprio backend, que pede a conversão e devolve o PDF pronto. No plano grátis do CloudConvert, isso é mais que suficiente para o volume de propostas de um time pequeno.
+- Como a instalação é manual por computador (sem administrador central do Microsoft 365), atualizações futuras no suplemento não exigem reinstalar o `manifest.xml` (ele só aponta para a URL do painel) — mas se algum dia trocarem de domínio na Vercel, o arquivo precisa ser atualizado e reinstalado.
+
 ## Ideias para o futuro (não incluídas ainda)
 
 - Alertas automáticos por e-mail (hoje o aviso de follow-up atrasado só aparece quando alguém abre o painel).

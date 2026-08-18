@@ -1,0 +1,374 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+
+const FIELD_LABELS = [
+  { key: 'name', label: 'Nome do contato' },
+  { key: 'empresa', label: 'Empresa' },
+  { key: 'telefone', label: 'Telefone' },
+  { key: 'produtoInteresse', label: 'Produto/Serviço de interesse' },
+  { key: 'valorEstimado', label: 'Valor estimado' },
+  { key: 'segmento', label: 'Segmento' },
+  { key: 'cargoDecisor', label: 'Cargo do decisor' },
+];
+
+function assembleBase64(slices) {
+  const totalLength = slices.reduce((sum, s) => sum + s.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const s of slices) {
+    combined.set(s, offset);
+    offset += s.length;
+  }
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, combined.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// Pega o .docx inteiro que está aberto no Word (bytes crus, comprimido) e
+// devolve como base64 — é assim que mandamos o arquivo pro nosso backend,
+// já que o Office.js não tem um jeito de "exportar como PDF" o documento
+// aberto (por isso a conversão pra PDF acontece do lado do servidor).
+function getDocumentAsBase64() {
+  return new Promise((resolve, reject) => {
+    if (!window.Office || !window.Office.context?.document) {
+      reject(new Error('Suplemento não está rodando dentro do Word.'));
+      return;
+    }
+    window.Office.context.document.getFileAsync(
+      window.Office.FileType.Compressed,
+      { sliceSize: 65536 },
+      (result) => {
+        if (result.status !== window.Office.AsyncResultStatus.Succeeded) {
+          reject(new Error(result.error?.message || 'Falha ao acessar o documento.'));
+          return;
+        }
+        const file = result.value;
+        if (file.sliceCount === 0) {
+          file.closeAsync();
+          resolve('');
+          return;
+        }
+        const slices = [];
+        let received = 0;
+        function getSlice(index) {
+          file.getSliceAsync(index, (sliceResult) => {
+            if (sliceResult.status !== window.Office.AsyncResultStatus.Succeeded) {
+              file.closeAsync();
+              reject(new Error(sliceResult.error?.message || 'Falha ao ler o documento.'));
+              return;
+            }
+            slices[index] = sliceResult.value.data;
+            received += 1;
+            if (received === file.sliceCount) {
+              file.closeAsync();
+              resolve(assembleBase64(slices));
+            } else {
+              getSlice(index + 1);
+            }
+          });
+        }
+        getSlice(0);
+      }
+    );
+  });
+}
+
+function insertAtCursor(text, onError) {
+  if (!window.Word) {
+    onError('Suplemento não está rodando dentro do Word.');
+    return;
+  }
+  window.Word.run(async (context) => {
+    const range = context.document.getSelection();
+    range.insertText(String(text ?? ''), window.Word.InsertLocation.replace);
+    await context.sync();
+  }).catch((err) => onError(err.message || 'Erro ao inserir no documento.'));
+}
+
+export default function WordAddinPage() {
+  const [officeReady, setOfficeReady] = useState(false);
+  const [officeError, setOfficeError] = useState('');
+  const [userName, setUserName] = useState('');
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [status, setStatus] = useState('');
+  const [finalizing, setFinalizing] = useState(false);
+  const debounceRef = useRef(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setUserName(data.name))
+      .catch(() => {});
+
+    if (window.Office) {
+      window.Office.onReady(() => setOfficeReady(true));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://appsforoffice.microsoft.com/lib/1/hosted/office.js';
+    script.onload = () => window.Office.onReady(() => setOfficeReady(true));
+    script.onerror = () =>
+      setOfficeError('Não foi possível carregar o Office.js — abra esta página de dentro do Word.');
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (query.trim().length < 2) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch(`/api/word-addin/search?q=${encodeURIComponent(query.trim())}`);
+        const data = await res.json();
+        setResults(res.ok ? data.items || [] : []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 350);
+    return () => clearTimeout(debounceRef.current);
+  }, [query]);
+
+  async function handleFinalize() {
+    if (!selected) return;
+    setFinalizing(true);
+    setStatus('Lendo o documento...');
+    try {
+      const fileBase64 = await getDocumentAsBase64();
+      setStatus('Enviando para o CRM...');
+      const res = await fetch('/api/word-addin/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId: selected.id,
+          fileBase64,
+          fileName: `Proposta - ${selected.name || 'Cliente'}.docx`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao vincular.');
+      const messages = {
+        ok: '✅ Word e PDF anexados ao lead no monday.com.',
+        timeout: '✅ Word anexado. A conversão para PDF está demorando — confira o lead em alguns instantes.',
+        error: '✅ Word anexado. A conversão automática para PDF falhou (o Word em si já está salvo no CRM).',
+        skipped: '✅ Word anexado ao lead no monday.com. (Conversão automática para PDF não está configurada.)',
+      };
+      setStatus(messages[data.pdfStatus] || '✅ Anexado ao CRM.');
+    } catch (err) {
+      setStatus(`❌ ${err.message}`);
+    } finally {
+      setFinalizing(false);
+    }
+  }
+
+  return (
+    <div style={styles.page}>
+      <header style={styles.header}>
+        <strong style={styles.brand}>CRM Agostini</strong>
+        <span style={styles.subBrand}>Suplemento do Word</span>
+        {userName && <span style={styles.userChip}>{userName}</span>}
+      </header>
+
+      {officeError && <div style={styles.warn}>{officeError}</div>}
+      {!officeReady && !officeError && <div style={styles.info}>Carregando...</div>}
+
+      {officeReady && (
+        <div style={styles.body}>
+          {!selected ? (
+            <>
+              <label style={styles.label}>Buscar cliente/lead</label>
+              <input
+                style={styles.input}
+                type="text"
+                placeholder="Nome ou empresa..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                autoFocus
+              />
+              {searching && <div style={styles.info}>Buscando...</div>}
+              {!searching && query.trim().length >= 2 && results.length === 0 && (
+                <div style={styles.info}>Nenhum lead encontrado.</div>
+              )}
+              <div style={styles.results}>
+                {results.map((item) => (
+                  <button key={item.id} style={styles.resultItem} onClick={() => setSelected(item)}>
+                    <div style={styles.resultName}>{item.name}</div>
+                    {item.empresa && <div style={styles.resultSub}>{item.empresa}</div>}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={styles.selectedBox}>
+                <div>
+                  <div style={styles.resultName}>{selected.name}</div>
+                  {selected.empresa && <div style={styles.resultSub}>{selected.empresa}</div>}
+                </div>
+                <button
+                  style={styles.linkBtn}
+                  onClick={() => {
+                    setSelected(null);
+                    setStatus('');
+                    setQuery('');
+                  }}
+                >
+                  Trocar cliente
+                </button>
+              </div>
+
+              <div style={styles.sectionTitle}>Inserir dados no texto</div>
+              <div style={styles.fieldList}>
+                {FIELD_LABELS.map(({ key, label }) => {
+                  const value = selected[key];
+                  if (!value) return null;
+                  return (
+                    <div key={key} style={styles.fieldRow}>
+                      <div style={styles.fieldText}>
+                        <div style={styles.fieldLabel}>{label}</div>
+                        <div style={styles.fieldValue}>{value}</div>
+                      </div>
+                      <button
+                        style={styles.insertBtn}
+                        onClick={() => insertAtCursor(value, (msg) => setStatus(`❌ ${msg}`))}
+                      >
+                        Inserir
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={styles.sectionTitle}>Finalizar</div>
+              <button style={styles.primaryBtn} disabled={finalizing} onClick={handleFinalize}>
+                {finalizing ? 'Enviando...' : 'Vincular proposta ao CRM (Word + PDF)'}
+              </button>
+              <p style={styles.hint}>
+                Isso anexa o arquivo do Word (e gera um PDF automaticamente) direto no card deste
+                cliente no monday.com — pode fazer isso quantas vezes quiser conforme for editando
+                a proposta; a versão mais recente sempre fica registrada.
+              </p>
+            </>
+          )}
+
+          {status && <div style={styles.status}>{status}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    fontFamily: '-apple-system, Segoe UI, Roboto, sans-serif',
+    fontSize: 13,
+    color: '#16212c',
+    padding: '12px 14px',
+    height: '100vh',
+    boxSizing: 'border-box',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  header: {
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 8,
+    borderBottom: '2px solid #0B5D42',
+    paddingBottom: 8,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  brand: { color: '#0B5D42', fontSize: 15 },
+  subBrand: { color: '#56636f', fontSize: 12 },
+  userChip: {
+    marginLeft: 'auto',
+    background: '#E8F4F0',
+    color: '#0B5D42',
+    borderRadius: 999,
+    padding: '2px 10px',
+    fontSize: 11,
+  },
+  body: { flex: 1, overflowY: 'auto' },
+  label: { display: 'block', fontSize: 12, color: '#56636f', marginBottom: 4 },
+  input: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid #d5dbe0',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  info: { color: '#56636f', fontSize: 12, padding: '6px 0' },
+  warn: { color: '#b3261e', fontSize: 12, padding: '8px', background: '#fbeceb', borderRadius: 6, marginBottom: 8 },
+  results: { display: 'flex', flexDirection: 'column', gap: 6 },
+  resultItem: {
+    textAlign: 'left',
+    border: '1px solid #e2e6e9',
+    background: '#fff',
+    borderRadius: 8,
+    padding: '8px 10px',
+    cursor: 'pointer',
+  },
+  resultName: { fontWeight: 600 },
+  resultSub: { color: '#56636f', fontSize: 12 },
+  selectedBox: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: '#F5F8F7',
+    border: '1px solid #d5e6e0',
+    borderRadius: 8,
+    padding: '8px 10px',
+    marginBottom: 14,
+  },
+  linkBtn: { background: 'none', border: 'none', color: '#0B5D42', fontSize: 12, cursor: 'pointer', textDecoration: 'underline' },
+  sectionTitle: { fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#56636f', margin: '14px 0 8px' },
+  fieldList: { display: 'flex', flexDirection: 'column', gap: 6 },
+  fieldRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+    border: '1px solid #e2e6e9',
+    borderRadius: 8,
+    padding: '6px 10px',
+  },
+  fieldText: { minWidth: 0 },
+  fieldLabel: { fontSize: 11, color: '#56636f' },
+  fieldValue: { fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  insertBtn: {
+    flexShrink: 0,
+    background: '#fff',
+    border: '1px solid #0B5D42',
+    color: '#0B5D42',
+    borderRadius: 6,
+    padding: '4px 10px',
+    fontSize: 12,
+    cursor: 'pointer',
+  },
+  primaryBtn: {
+    width: '100%',
+    background: '#0B5D42',
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
+    padding: '10px 12px',
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+  hint: { fontSize: 11, color: '#56636f', marginTop: 8, lineHeight: 1.4 },
+  status: { marginTop: 14, fontSize: 12, padding: '8px 10px', background: '#F5F8F7', borderRadius: 8 },
+};
