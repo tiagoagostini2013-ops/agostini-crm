@@ -242,8 +242,16 @@ export default function Agenda({ items, usersById, onSelect }) {
           const isCollapsed = !!collapsed[s.key];
           return (
             <div className={`metrics-section agenda-section ${s.className || ''}`} key={s.key}>
-              <h3 className="agenda-section-header" onClick={() => toggleSection(s.key)}>
-                <span className="agenda-toggle-icon">{isCollapsed ? '▸' : '▾'}</span>
+              <h3 className="agenda-section-header">
+                <button
+                  type="button"
+                  className="agenda-toggle-icon"
+                  onClick={() => toggleSection(s.key)}
+                  aria-expanded={!isCollapsed}
+                  aria-label={isCollapsed ? `Expandir grupo ${s.title}` : `Recolher grupo ${s.title}`}
+                >
+                  {isCollapsed ? '▸' : '▾'}
+                </button>
                 {s.title} {s.items.length > 0 && <span className="agenda-count">{s.items.length}</span>}
               </h3>
               {!isCollapsed && (
