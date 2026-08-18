@@ -65,9 +65,13 @@ export default function Dashboard() {
     loadMe();
   }, []);
 
+  // Usa a lista completa (todos os setores) só pra resolver nomes — assim
+  // leads antigos que ainda apontam pra alguém fora do time de vendas
+  // continuam mostrando o nome certo, mesmo que essa pessoa não apareça mais
+  // no filtro nem no seletor de responsável (ver /api/meta).
   const usersById = useMemo(() => {
     const map = {};
-    (meta?.users || []).forEach((u) => (map[String(u.id)] = u));
+    (meta?.allUsers || meta?.users || []).forEach((u) => (map[String(u.id)] = u));
     return map;
   }, [meta]);
 

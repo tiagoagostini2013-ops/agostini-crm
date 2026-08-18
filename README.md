@@ -88,6 +88,7 @@ As listas de opções (segmentos, cargos, canais, motivos de perda) estão hoje 
 - Painel de métricas: total de leads, taxa de conversão, ticket médio, motivo de perda mais comum, funil por estágio e ranking por responsável.
 - Agenda de follow-ups: atrasados, hoje, próximos 7 dias e leads sem follow-up agendado — com um banner de aviso no Kanban quando há pendências.
 - Login individual por pessoa, com uma tela de administração para cadastrar/desativar usuários e redefinir senhas.
+- Cada conta do painel pode ser vinculada à pessoa correspondente no monday.com ("Gerenciar usuários" → coluna "Vendedor no monday.com") — só quem está vinculado aparece no filtro de "responsável" e pode ser escolhido ao criar/editar um lead, então gente de outros setores (PCP, almoxarifado, técnicos etc.) não polui mais essas listas. Leads antigos que já estavam com alguém de fora atribuído continuam mostrando o nome certo, só não dá mais pra escolher essa pessoa daqui pra frente.
 - Filtros por responsável, segmento e canal de origem, mais busca por nome/empresa/telefone.
 - Aviso visual quando um lead está há mais de 5 dias sem contato.
 - Link direto para abrir o item correspondente no monday.com.

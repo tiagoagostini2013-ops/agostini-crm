@@ -20,6 +20,7 @@ export async function PATCH(request, { params }) {
   }
   if (body.admin !== undefined) fields.admin = !!body.admin;
   if (body.ativo !== undefined) fields.ativo = !!body.ativo;
+  if (body.mondayUserId !== undefined) fields.mondayUserId = body.mondayUserId || null;
 
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: 'Nada para atualizar.' }, { status: 400 });

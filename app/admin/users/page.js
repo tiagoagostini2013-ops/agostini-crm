@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-function NewUserForm({ onCreated }) {
+function NewUserForm({ mondayUsers, onCreated }) {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [admin, setAdmin] = useState(false);
+  const [mondayUserId, setMondayUserId] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -18,13 +19,14 @@ function NewUserForm({ onCreated }) {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, password, admin }),
+        body: JSON.stringify({ name, password, admin, mondayUserId: mondayUserId || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao criar usuário.');
       setName('');
       setPassword('');
       setAdmin(false);
+      setMondayUserId('');
       onCreated();
     } catch (err) {
       setError(err.message);
@@ -52,6 +54,20 @@ function NewUserForm({ onCreated }) {
           />
         </div>
       </div>
+      <div className="field" style={{ marginBottom: 12 }}>
+        <label>Qual pessoa do monday.com é essa?</label>
+        <select value={mondayUserId} onChange={(e) => setMondayUserId(e.target.value)}>
+          <option value="">— Não vincular por enquanto —</option>
+          {(mondayUsers || []).map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: '0.76rem', color: 'var(--ink-soft)', marginTop: 4 }}>
+          Só quem estiver vinculado aqui aparece no filtro de "responsável" e pode ser escolhido pra receber leads.
+        </div>
+      </div>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12, fontSize: '0.85rem' }}>
         <input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />
         Também é administrador (pode gerenciar outros usuários)
@@ -63,7 +79,7 @@ function NewUserForm({ onCreated }) {
   );
 }
 
-function UserRow({ user, onChanged }) {
+function UserRow({ user, mondayUsers, onChanged }) {
   const [resetting, setResetting] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [error, setError] = useState('');
@@ -102,6 +118,20 @@ function UserRow({ user, onChanged }) {
   return (
     <tr>
       <td>{user.name}</td>
+      <td>
+        <select
+          value={user.mondayUserId || ''}
+          disabled={busy}
+          onChange={(e) => patch({ mondayUserId: e.target.value || null })}
+        >
+          <option value="">— Não vinculado —</option>
+          {(mondayUsers || []).map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name}
+            </option>
+          ))}
+        </select>
+      </td>
       <td>
         <input
           type="checkbox"
@@ -158,6 +188,7 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const [me, setMe] = useState(null);
   const [users, setUsers] = useState(null);
+  const [mondayUsers, setMondayUsers] = useState(null);
   const [error, setError] = useState('');
 
   async function loadMe() {
@@ -177,10 +208,24 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function loadMondayUsers() {
+    try {
+      const res = await fetch('/api/admin/monday-users');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao carregar pessoas do monday.com.');
+      setMondayUsers(data.users);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   useEffect(() => {
     loadMe();
     loadUsers();
+    loadMondayUsers();
   }, []);
+
+  const unlinkedCount = (users || []).filter((u) => u.ativo && !u.mondayUserId).length;
 
   if (me && !me.admin) {
     return (
@@ -212,6 +257,14 @@ export default function AdminUsersPage() {
       <div className="metrics-scroll">
         {error && <div className="banner banner-error">{error}</div>}
 
+        {unlinkedCount > 0 && (
+          <div className="banner banner-warning">
+            ⚠ {unlinkedCount} usuário(s) ativo(s) ainda sem vínculo com uma pessoa do monday.com — enquanto isso,
+            essa pessoa não aparece no filtro de "responsável" nem pode ser escolhida ao criar/editar um lead. Use a
+            coluna "Vendedor no monday.com" abaixo para vincular.
+          </div>
+        )}
+
         <div className="metrics-section">
           <h3>Quem tem acesso ao painel</h3>
           {!users && <div style={{ color: 'var(--ink-soft)' }}>Carregando...</div>}
@@ -220,6 +273,7 @@ export default function AdminUsersPage() {
               <thead>
                 <tr>
                   <th>Nome</th>
+                  <th>Vendedor no monday.com</th>
                   <th>Admin</th>
                   <th>Ativo</th>
                   <th>Senha</th>
@@ -227,14 +281,14 @@ export default function AdminUsersPage() {
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <UserRow key={u.id} user={u} onChanged={loadUsers} />
+                  <UserRow key={u.id} user={u} mondayUsers={mondayUsers} onChanged={loadUsers} />
                 ))}
               </tbody>
             </table>
           )}
         </div>
 
-        <NewUserForm onCreated={loadUsers} />
+        <NewUserForm mondayUsers={mondayUsers} onCreated={loadUsers} />
       </div>
     </div>
   );
