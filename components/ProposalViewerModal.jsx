@@ -1,15 +1,23 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+
 // Modal com visualizador embutido de uma proposta anexada (docx/pdf/etc.),
 // aberto direto no CRM em vez de redirecionar para o monday.com.
 //
-// PDF: o próprio navegador sabe renderizar dentro de um iframe.
-// docx/xlsx/pptx: usamos o visualizador público da Microsoft (Office Online
-// Viewer), que só precisa de uma URL do arquivo acessível pela internet —
-// exatamente o que a public_url do monday.com fornece. Essa URL tem validade
-// curta (a documentação do monday indica ~1h), então a prévia pode parar de
-// funcionar se o card ficar aberto por muito tempo; nesse caso basta fechar
-// e reabrir o card para pegar uma URL nova.
+// A URL "crua" que o monday.com dá pro arquivo (public_url) expira em 1h e
+// vem com Content-Disposition: attachment, que faz o navegador tentar
+// baixar o arquivo em vez de mostrar dentro do iframe. Por isso, antes de
+// exibir qualquer coisa, pedimos pro nosso próprio backend um link de
+// prévia (/api/proposals/[assetId]/link) — ele devolve uma URL do nosso
+// domínio, sempre fresca, que serve o arquivo com "inline".
+//
+// PDF: o navegador sabe renderizar sozinho dentro de um iframe.
+// docx/xlsx/pptx: usamos o Office Online Viewer da Microsoft, que só
+// precisa de uma URL pública do arquivo (a nossa, com token assinado) para
+// buscar o conteúdo e renderizar — por isso a rota de prévia precisa ser
+// acessível sem cookie de sessão (o token já garante que só serve por um
+// tempo curto e só aquele arquivo específico).
 
 const OFFICE_EXTENSIONS = new Set(['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx']);
 const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
@@ -20,33 +28,55 @@ function getExtension(name) {
 }
 
 export default function ProposalViewerModal({ proposal, fallbackUrl, onClose }) {
+  const [absoluteUrl, setAbsoluteUrl] = useState(null);
+  const [loadError, setLoadError] = useState('');
   const ext = getExtension(proposal.name);
-  const hasUrl = Boolean(proposal.url);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAbsoluteUrl(null);
+    setLoadError('');
+    fetch(`/api/proposals/${encodeURIComponent(proposal.assetId)}/link`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (!data.viewUrl) throw new Error('Resposta inesperada ao gerar o link de prévia.');
+        setAbsoluteUrl(`${window.location.origin}${data.viewUrl}`);
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message || 'Não foi possível preparar a prévia.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [proposal.assetId]);
 
   let body;
-  if (!hasUrl) {
+  if (loadError) {
     body = (
       <div className="proposal-viewer-fallback">
-        Não foi possível carregar a prévia deste arquivo agora (a URL pode ter expirado).
+        {loadError}
         <br />
         <a href={fallbackUrl} target="_blank" rel="noreferrer">
           Abrir o lead no monday.com ↗
         </a>
       </div>
     );
+  } else if (!absoluteUrl) {
+    body = <div className="proposal-viewer-fallback">Carregando prévia...</div>;
   } else if (ext === 'pdf') {
-    body = <iframe key={proposal.url} src={proposal.url} title={proposal.name} className="proposal-viewer-frame" />;
+    body = <iframe key={absoluteUrl} src={absoluteUrl} title={proposal.name} className="proposal-viewer-frame" />;
   } else if (IMAGE_EXTENSIONS.has(ext)) {
-    body = <img src={proposal.url} alt={proposal.name} className="proposal-viewer-image" />;
+    body = <img src={absoluteUrl} alt={proposal.name} className="proposal-viewer-image" />;
   } else if (OFFICE_EXTENSIONS.has(ext)) {
-    const embedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(proposal.url)}`;
+    const embedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
     body = <iframe key={embedUrl} src={embedUrl} title={proposal.name} className="proposal-viewer-frame" />;
   } else {
     body = (
       <div className="proposal-viewer-fallback">
         Prévia não disponível para este tipo de arquivo.
         <br />
-        <a href={proposal.url} target="_blank" rel="noreferrer">
+        <a href={absoluteUrl} target="_blank" rel="noreferrer">
           Abrir arquivo em nova aba ↗
         </a>
       </div>
@@ -59,8 +89,8 @@ export default function ProposalViewerModal({ proposal, fallbackUrl, onClose }) 
         <div className="proposal-viewer-header">
           <span title={proposal.name}>📄 {proposal.name}</span>
           <div className="proposal-viewer-actions">
-            {hasUrl && (
-              <a href={proposal.url} target="_blank" rel="noreferrer" className="btn-link">
+            {absoluteUrl && (
+              <a href={absoluteUrl} target="_blank" rel="noreferrer" className="btn-link">
                 Abrir em nova aba ↗
               </a>
             )}

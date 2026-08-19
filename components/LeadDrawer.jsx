@@ -191,7 +191,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           {item.propostas && item.propostas.length > 0 && (
             <div className="propostas-list">
               {item.propostas.map((p) => (
-                <button key={p.fileId} type="button" className="proposta-item" onClick={() => setViewingProposal(p)}>
+                <button key={p.assetId} type="button" className="proposta-item" onClick={() => setViewingProposal(p)}>
                   📄 {p.name}
                 </button>
               ))}
