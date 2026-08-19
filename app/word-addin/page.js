@@ -1,6 +1,22 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { upload } from '@vercel/blob/client';
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+// Se o servidor responder algo que não é JSON (ex: erro de infraestrutura,
+// gateway fora do ar, timeout) — em vez de deixar o `res.json()` estourar um
+// "Unexpected token..." ilegível pro vendedor, mostra uma mensagem decente
+// com o começo da resposta crua, pra dar pista do que houve.
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Resposta inesperada do servidor (${res.status}): ${text.slice(0, 200) || 'vazia'}`);
+  }
+}
 
 const FIELD_LABELS = [
   { key: 'name', label: 'Nome do contato' },
@@ -12,27 +28,14 @@ const FIELD_LABELS = [
   { key: 'cargoDecisor', label: 'Cargo do decisor' },
 ];
 
-function assembleBase64(slices) {
-  const totalLength = slices.reduce((sum, s) => sum + s.length, 0);
-  const combined = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const s of slices) {
-    combined.set(s, offset);
-    offset += s.length;
-  }
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < combined.length; i += chunkSize) {
-    binary += String.fromCharCode.apply(null, combined.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
-
 // Pega o .docx inteiro que está aberto no Word (bytes crus, comprimido) e
-// devolve como base64 — é assim que mandamos o arquivo pro nosso backend,
-// já que o Office.js não tem um jeito de "exportar como PDF" o documento
-// aberto (por isso a conversão pra PDF acontece do lado do servidor).
-function getDocumentAsBase64() {
+// devolve como Blob — já os bytes puros, sem passar por base64 (que só
+// inflaria o tamanho em ~33% à toa, e o suplemento manda o arquivo direto
+// pro Vercel Blob, não mais pro nosso backend, ver handleFinalize). O
+// Office.js não tem um jeito de "exportar como PDF" o documento aberto, por
+// isso a conversão pra PDF acontece do lado do servidor, a partir deste
+// mesmo .docx.
+function getDocumentAsBlob() {
   return new Promise((resolve, reject) => {
     if (!window.Office || !window.Office.context?.document) {
       reject(new Error('Suplemento não está rodando dentro do Word.'));
@@ -49,7 +52,7 @@ function getDocumentAsBase64() {
         const file = result.value;
         if (file.sliceCount === 0) {
           file.closeAsync();
-          resolve('');
+          resolve(new Blob([], { type: DOCX_MIME }));
           return;
         }
         const slices = [];
@@ -65,7 +68,7 @@ function getDocumentAsBase64() {
             received += 1;
             if (received === file.sliceCount) {
               file.closeAsync();
-              resolve(assembleBase64(slices));
+              resolve(new Blob(slices.map((s) => new Uint8Array(s)), { type: DOCX_MIME }));
             } else {
               getSlice(index + 1);
             }
@@ -145,18 +148,31 @@ export default function WordAddinPage() {
     setFinalizing(true);
     setStatus('Lendo o documento...');
     try {
-      const fileBase64 = await getDocumentAsBase64();
-      setStatus('Enviando para o CRM...');
+      const fileBlob = await getDocumentAsBlob();
+      const fileName = `Proposta - ${selected.name || 'Cliente'}.docx`;
+
+      // Sobe o arquivo direto pro Vercel Blob (bypassa nosso backend) — uma
+      // proposta técnica com fotos/desenhos passa fácil dos 4.5MB que uma
+      // função da Vercel aceita num POST só, então só a URL do resultado
+      // (bem pequena) é que vai pro /finalize.
+      setStatus('Enviando o arquivo...');
+      const blobResult = await upload(fileName, fileBlob, {
+        access: 'public',
+        handleUploadUrl: '/api/word-addin/blob-upload',
+        contentType: DOCX_MIME,
+      });
+
+      setStatus('Vinculando ao CRM...');
       const res = await fetch('/api/word-addin/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemId: selected.id,
-          fileBase64,
-          fileName: `Proposta - ${selected.name || 'Cliente'}.docx`,
+          blobUrl: blobResult.url,
+          fileName,
         }),
       });
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Falha ao vincular.');
       const messages = {
         ok: '✅ Word e PDF anexados ao lead no monday.com.',
