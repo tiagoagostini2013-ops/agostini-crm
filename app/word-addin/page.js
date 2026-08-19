@@ -131,7 +131,9 @@ export default function WordAddinPage() {
     debounceRef.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const res = await fetch(`/api/word-addin/search?q=${encodeURIComponent(query.trim())}`);
+        const res = await fetch(`/api/word-addin/search?q=${encodeURIComponent(query.trim())}`, {
+          cache: 'no-store',
+        });
         const data = await res.json();
         setResults(res.ok ? data.items || [] : []);
       } catch {
@@ -152,7 +154,7 @@ export default function WordAddinPage() {
       // no servidor, a biblioteca de upload só devolve um erro genérico
       // ("Failed to retrieve the client token") que não ajuda ninguém a
       // resolver — aqui a gente já avisa o que realmente falta.
-      const statusRes = await fetch('/api/word-addin/blob-status');
+      const statusRes = await fetch(`/api/word-addin/blob-status?t=${Date.now()}`, { cache: 'no-store' });
       const statusData = await parseJsonResponse(statusRes).catch(() => ({ configured: true }));
       if (statusRes.ok && statusData.configured === false) {
         throw new Error(
