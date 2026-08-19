@@ -307,6 +307,42 @@ a { color: var(--accent); }
 }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover { background: #00699a; }
+
+/* ---------- Propostas (drawer + visualizador) ---------- */
+.propostas-list { display: flex; flex-direction: column; gap: 6px; }
+.proposta-item {
+  display: block; width: 100%; text-align: left; background: #f4f7f9; border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; font-size: 0.86rem; color: var(--accent); cursor: pointer;
+}
+.proposta-item:hover { background: #e9eff3; }
+
+.proposal-viewer-backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,32,0.55); z-index: 50;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.proposal-viewer-modal {
+  background: var(--paper); border-radius: 12px; width: min(900px, 100%); height: min(85vh, 900px);
+  display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+}
+.proposal-viewer-header {
+  padding: 12px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center;
+  justify-content: space-between; gap: 10px; font-weight: 600; font-size: 0.9rem;
+}
+.proposal-viewer-header span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proposal-viewer-actions { display: flex; align-items: center; gap: 14px; flex-shrink: 0; }
+.proposal-viewer-actions .close {
+  border: none; background: transparent; font-size: 1.3rem; cursor: pointer; color: var(--ink-soft); line-height: 1;
+}
+.proposal-viewer-body { flex: 1; min-height: 0; }
+.proposal-viewer-frame { width: 100%; height: 100%; border: none; }
+.proposal-viewer-image { width: 100%; height: 100%; object-fit: contain; background: #222; }
+.proposal-viewer-fallback {
+  padding: 40px 24px; text-align: center; color: var(--ink-soft); font-size: 0.9rem; line-height: 1.6;
+}
+@media (max-width: 720px) {
+  .proposal-viewer-backdrop { padding: 0; }
+  .proposal-viewer-modal { width: 100%; height: 100%; border-radius: 0; }
+}
 .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
 .btn-secondary { background: #eef2f5; color: var(--ink); }
 .btn-secondary:hover { background: #e1e6ea; }

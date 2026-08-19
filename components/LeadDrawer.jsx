@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { MONDAY_ACCOUNT_URL, BOARD_ID_PUBLIC } from '../lib/publicConfig';
+import ProposalViewerModal from './ProposalViewerModal';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -27,6 +28,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [notes, setNotes] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [viewingProposal, setViewingProposal] = useState(null);
 
   useEffect(() => {
     setForm({ ...item });
@@ -189,16 +191,9 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           {item.propostas && item.propostas.length > 0 && (
             <div className="propostas-list">
               {item.propostas.map((p) => (
-                <a
-                  key={p.fileId}
-                  className="btn-link"
-                  style={{ display: 'block', marginBottom: 6 }}
-                  href={p.url || `${MONDAY_ACCOUNT_URL}/boards/${BOARD_ID_PUBLIC}/pulses/${item.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <button key={p.fileId} type="button" className="proposta-item" onClick={() => setViewingProposal(p)}>
                   📄 {p.name}
-                </a>
+                </button>
               ))}
             </div>
           )}
@@ -395,6 +390,14 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           </div>
         </div>
       </div>
+
+      {viewingProposal && (
+        <ProposalViewerModal
+          proposal={viewingProposal}
+          fallbackUrl={`${MONDAY_ACCOUNT_URL}/boards/${BOARD_ID_PUBLIC}/pulses/${item.id}`}
+          onClose={() => setViewingProposal(null)}
+        />
+      )}
     </>
   );
 }
