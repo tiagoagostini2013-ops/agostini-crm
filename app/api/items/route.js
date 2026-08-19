@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { fetchAllItems, createLead } from '../../../lib/monday';
+import { fetchAllItems, createLead, fetchAssetsPublicUrls } from '../../../lib/monday';
 import { BOARD_ID, COLUMNS } from '../../../lib/config';
 import { flattenItem, buildColumnValues } from '../../../lib/transform';
 
@@ -9,8 +9,26 @@ const COLUMN_IDS = Object.values(COLUMNS);
 
 export async function GET() {
   try {
-    const items = await fetchAllItems(BOARD_ID, COLUMN_IDS);
-    return NextResponse.json({ items: items.map(flattenItem) });
+    const rawItems = await fetchAllItems(BOARD_ID, COLUMN_IDS);
+    const items = rawItems.map(flattenItem);
+
+    // A coluna "Propostas" só traz o fileId no value da coluna — busca as
+    // URLs públicas de todos os arquivos de uma vez (evita 1 chamada por
+    // lead) e completa cada item.
+    const assetIds = items.flatMap((it) => it.propostas.filter((p) => p.isAsset).map((p) => p.fileId));
+    if (assetIds.length > 0) {
+      try {
+        const assetMap = await fetchAssetsPublicUrls(assetIds);
+        for (const it of items) {
+          it.propostas = it.propostas.map((p) => ({ ...p, url: assetMap[p.fileId]?.url || null }));
+        }
+      } catch {
+        // Se a busca de URLs falhar, ainda mostramos os nomes dos arquivos
+        // (sem link clicável) em vez de derrubar a listagem inteira.
+      }
+    }
+
+    return NextResponse.json({ items });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

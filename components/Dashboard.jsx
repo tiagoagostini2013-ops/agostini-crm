@@ -285,6 +285,11 @@ export default function Dashboard() {
                                 <div className="meta-row">
                                   {item.segmento && <span className="chip">{item.segmento}</span>}
                                   {item.canalOrigem && <span className="chip">{item.canalOrigem}</span>}
+                                  {item.propostas && item.propostas.length > 0 && (
+                                    <span className="chip" title="Propostas vinculadas">
+                                      📄 {item.propostas.length}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="footer-row">
                                   <span>

@@ -161,7 +161,7 @@ export default function WordAddinPage() {
       const messages = {
         ok: '✅ Word e PDF anexados ao lead no monday.com.',
         timeout: '✅ Word anexado. A conversão para PDF está demorando — confira o lead em alguns instantes.',
-        error: '✅ Word anexado. A conversão automática para PDF falhou (o Word em si já está salvo no CRM).',
+        error: `✅ Word anexado. A conversão automática para PDF falhou${data.pdfError ? `: ${data.pdfError}` : ''} (o Word em si já está salvo no CRM).`,
         skipped: '✅ Word anexado ao lead no monday.com. (Conversão automática para PDF não está configurada.)',
       };
       setStatus(messages[data.pdfStatus] || '✅ Anexado ao CRM.');

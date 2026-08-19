@@ -180,6 +180,31 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
         </div>
 
         <div className="drawer-section">
+          <h3>Propostas</h3>
+          {(!item.propostas || item.propostas.length === 0) && (
+            <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>
+              Nenhuma proposta vinculada ainda. Use o suplemento do Word ("Vincular proposta ao CRM") para anexar.
+            </div>
+          )}
+          {item.propostas && item.propostas.length > 0 && (
+            <div className="propostas-list">
+              {item.propostas.map((p) => (
+                <a
+                  key={p.fileId}
+                  className="btn-link"
+                  style={{ display: 'block', marginBottom: 6 }}
+                  href={p.url || `${MONDAY_ACCOUNT_URL}/boards/${BOARD_ID_PUBLIC}/pulses/${item.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  📄 {p.name}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="drawer-section">
           <h3>Qualificação do lead</h3>
           <div className="qualify-panel">
             <h4>
