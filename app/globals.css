@@ -315,6 +315,14 @@ a { color: var(--accent); }
   border-radius: 8px; padding: 8px 10px; font-size: 0.86rem; color: var(--accent); cursor: pointer;
 }
 .proposta-item:hover { background: #e9eff3; }
+.proposta-item-row { display: flex; align-items: stretch; gap: 6px; }
+.proposta-item-row .proposta-item { flex: 1; }
+.proposta-delete-btn {
+  background: #f4f7f9; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px;
+  cursor: pointer; font-size: 0.9rem; color: #b3261e; flex-shrink: 0;
+}
+.proposta-delete-btn:hover { background: #fbe9e7; }
+.proposta-delete-btn:disabled { opacity: 0.6; cursor: default; }
 
 .proposal-viewer-backdrop {
   position: fixed; inset: 0; background: rgba(15,23,32,0.55); z-index: 50;

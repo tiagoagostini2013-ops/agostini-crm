@@ -8,6 +8,10 @@ export const dynamic = 'force-dynamic';
 // retrieve the client token", uma mensagem genérica que não diz o que
 // realmente houve. Essa rota é protegida pelo middleware normalmente (exige
 // sessão) — não há dado sensível na resposta, só um booleano.
+//
+// Apesar do nome/pasta, é usada tanto pelo suplemento do Word quanto pelo
+// botão "Adicionar arquivo" do painel principal — a configuração checada
+// (BLOB_READ_WRITE_TOKEN) é a mesma nos dois casos.
 export async function GET() {
   return NextResponse.json(
     { configured: Boolean(process.env.BLOB_READ_WRITE_TOKEN) },

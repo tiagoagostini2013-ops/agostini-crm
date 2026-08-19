@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { upload } from '@vercel/blob/client';
+import { uploadWithRetry } from '../../lib/blobUpload';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -170,24 +170,32 @@ export default function WordAddinPage() {
       // proposta técnica com fotos/desenhos passa fácil dos 4.5MB que uma
       // função da Vercel aceita num POST só, então só a URL do resultado
       // (bem pequena) é que vai pro /finalize.
-      setStatus(`Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)...`);
+      setStatus(`Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... 0%`);
       let blobResult;
       try {
-        blobResult = await upload(fileName, fileBlob, {
-          access: 'public',
+        blobResult = await uploadWithRetry(fileName, fileBlob, {
           handleUploadUrl: '/api/word-addin/blob-upload',
           contentType: DOCX_MIME,
-          onUploadProgress: ({ percentage }) => {
-            setStatus(`Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... ${percentage}%`);
+          onStatus: ({ percentage, attempt, retrying }) => {
+            if (retrying) {
+              setStatus(`Conexão travou perto do fim do envio. Tentando de novo (tentativa ${attempt}/3)...`);
+            } else {
+              setStatus(
+                `Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... ${percentage}%` +
+                  (attempt > 1 ? ` (tentativa ${attempt}/3)` : '')
+              );
+            }
           },
         });
       } catch (err) {
         // A biblioteca do Vercel Blob esconde o motivo real por trás de uma
-        // mensagem genérica ("Failed to retrieve the client token") — como já
-        // checamos a configuração acima, se chegou aqui é provável que seja a
-        // sessão (tente sair e entrar de novo no suplemento).
+        // mensagem genérica ("Failed to retrieve the client token") em caso de
+        // erro de sessão/configuração — como já checamos a configuração acima,
+        // se chegou aqui é provável que seja a sessão (tente sair e entrar de
+        // novo no suplemento). uploadWithRetry já tenta de novo sozinho antes
+        // de desistir (ver lib/blobUpload.js).
         throw new Error(
-          `Falha ao enviar o arquivo (${err.message}). Se persistir, feche este painel e abra de novo para renovar o login.`
+          `Falha ao enviar o arquivo: ${err.message}. Se persistir, feche este painel e abra de novo para renovar o login.`
         );
       }
 

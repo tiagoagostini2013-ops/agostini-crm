@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { MONDAY_ACCOUNT_URL, BOARD_ID_PUBLIC } from '../lib/publicConfig';
+import { uploadWithRetry } from '../lib/blobUpload';
 import ProposalViewerModal from './ProposalViewerModal';
 
 function fmtDate(d) {
@@ -29,10 +30,16 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [viewingProposal, setViewingProposal] = useState(null);
+  const [arquivos, setArquivos] = useState(item.propostas || []);
+  const [uploadingFile, setUploadingFile] = useState(null); // { name, status } | null
+  const [deletingAssetId, setDeletingAssetId] = useState(null);
+  const [fileError, setFileError] = useState('');
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     setForm({ ...item });
     setError('');
+    setArquivos(item.propostas || []);
   }, [item]);
 
   useEffect(() => {
@@ -115,6 +122,72 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
     }
   }
 
+  async function handleFileSelected(e) {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois
+    if (!file) return;
+
+    setFileError('');
+    const fileSizeMb = file.size / (1024 * 1024);
+    setUploadingFile({ name: file.name, status: `Enviando (${fileSizeMb.toFixed(1)}MB)... 0%` });
+
+    try {
+      // Mesma checagem do suplemento do Word: sem isso, se o Vercel Blob não
+      // estiver configurado no servidor, o erro que aparece é um genérico
+      // "Failed to retrieve the client token" que não ajuda ninguém.
+      const statusRes = await fetch(`/api/word-addin/blob-status?t=${Date.now()}`, { cache: 'no-store' });
+      const statusData = await statusRes.json().catch(() => ({ configured: true }));
+      if (statusRes.ok && statusData.configured === false) {
+        throw new Error(
+          'O envio de arquivos ainda não está configurado neste servidor (peça para o administrador do painel criar o Blob Store na Vercel).'
+        );
+      }
+
+      const blobResult = await uploadWithRetry(file.name, file, {
+        handleUploadUrl: '/api/files/blob-upload',
+        contentType: file.type || 'application/octet-stream',
+        onStatus: ({ percentage, attempt, retrying }) => {
+          setUploadingFile({
+            name: file.name,
+            status: retrying
+              ? `Conexão travou perto do fim. Tentando de novo (tentativa ${attempt}/3)...`
+              : `Enviando (${fileSizeMb.toFixed(1)}MB)... ${percentage}%${attempt > 1 ? ` (tentativa ${attempt}/3)` : ''}`,
+          });
+        },
+      });
+
+      setUploadingFile({ name: file.name, status: 'Vinculando ao lead...' });
+      const res = await fetch(`/api/items/${item.id}/files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blobUrl: blobResult.url, fileName: file.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao anexar o arquivo.');
+      setArquivos(data.arquivos || []);
+    } catch (err) {
+      setFileError(`Falha ao enviar "${file.name}": ${err.message}`);
+    } finally {
+      setUploadingFile(null);
+    }
+  }
+
+  async function handleDeleteFile(file) {
+    if (!window.confirm(`Remover "${file.name}" deste lead? Essa ação não pode ser desfeita.`)) return;
+    setFileError('');
+    setDeletingAssetId(file.assetId);
+    try {
+      const res = await fetch(`/api/items/${item.id}/files/${file.assetId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Falha ao remover o arquivo.');
+      setArquivos(data.arquivos || []);
+    } catch (err) {
+      setFileError(`Falha ao remover "${file.name}": ${err.message}`);
+    } finally {
+      setDeletingAssetId(null);
+    }
+  }
+
   const qualifyCount = QUALIFY_FIELDS.filter((f) => form[f.key]).length;
   const isDirty = Object.keys(diff()).length > 0;
   const responsavelIds = form.responsavelIds || [];
@@ -182,21 +255,53 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
         </div>
 
         <div className="drawer-section">
-          <h3>Propostas</h3>
-          {(!item.propostas || item.propostas.length === 0) && (
-            <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>
-              Nenhuma proposta vinculada ainda. Use o suplemento do Word ("Vincular proposta ao CRM") para anexar.
+          <h3>Arquivos</h3>
+          {fileError && <div className="banner banner-error">{fileError}</div>}
+          {arquivos.length === 0 && !uploadingFile && (
+            <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
+              Nenhum arquivo vinculado ainda. Anexe propostas, orçamentos de frete, layouts do cliente etc.
             </div>
           )}
-          {item.propostas && item.propostas.length > 0 && (
+          {arquivos.length > 0 && (
             <div className="propostas-list">
-              {item.propostas.map((p) => (
-                <button key={p.assetId} type="button" className="proposta-item" onClick={() => setViewingProposal(p)}>
-                  📄 {p.name}
-                </button>
+              {arquivos.map((f) => (
+                <div key={f.assetId} className="proposta-item-row">
+                  <button type="button" className="proposta-item" onClick={() => setViewingProposal(f)}>
+                    📄 {f.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="proposta-delete-btn"
+                    title="Remover arquivo"
+                    disabled={deletingAssetId === f.assetId}
+                    onClick={() => handleDeleteFile(f)}
+                  >
+                    {deletingAssetId === f.assetId ? '...' : '🗑️'}
+                  </button>
+                </div>
               ))}
             </div>
           )}
+          {uploadingFile && (
+            <div style={{ color: '#037f4c', fontSize: '0.85rem', margin: '4px 0 8px' }}>
+              {uploadingFile.name}: {uploadingFile.status}
+            </div>
+          )}
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            onChange={handleFileSelected}
+            disabled={Boolean(uploadingFile)}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={Boolean(uploadingFile)}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploadingFile ? 'Enviando...' : '+ Adicionar arquivo'}
+          </button>
         </div>
 
         <div className="drawer-section">
