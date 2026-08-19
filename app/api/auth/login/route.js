@@ -32,8 +32,14 @@ export async function POST(request) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    // "none" (em vez de "lax") é necessário porque o suplemento do Word abre
+    // esta página dentro de um iframe hospedado pelo Word/Office — sem isso,
+    // o navegador aceita o cookie mas nunca o reenvia nas chamadas seguintes
+    // feitas de dentro desse iframe, e o login nunca "gruda". SameSite=None
+    // exige Secure=true sempre (não só em produção), senão o navegador
+    // rejeita o cookie de qualquer jeito.
+    secure: true,
+    sameSite: 'none',
     path: '/',
     maxAge: 60 * 60 * 24 * 30,
   });

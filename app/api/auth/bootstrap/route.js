@@ -44,8 +44,11 @@ export async function POST(request) {
   const res = NextResponse.json({ ok: true });
   res.cookies.set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    // Ver comentário equivalente em app/api/auth/login/route.js sobre por que
+    // é "none" e não "lax" (necessário para o suplemento do Word, que roda
+    // dentro de um iframe do Word/Office).
+    secure: true,
+    sameSite: 'none',
     path: '/',
     maxAge: 60 * 60 * 24 * 30,
   });
