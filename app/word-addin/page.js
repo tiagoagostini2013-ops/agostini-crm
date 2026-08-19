@@ -103,6 +103,7 @@ export default function WordAddinPage() {
   const [status, setStatus] = useState('');
   const [finalizing, setFinalizing] = useState(false);
   const debounceRef = useRef(null);
+  const cancelControllerRef = useRef(null);
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -145,10 +146,16 @@ export default function WordAddinPage() {
     return () => clearTimeout(debounceRef.current);
   }, [query]);
 
+  function handleCancelUpload() {
+    cancelControllerRef.current?.abort();
+  }
+
   async function handleFinalize() {
     if (!selected) return;
     setFinalizing(true);
     setStatus('Lendo o documento...');
+    const cancelController = new AbortController();
+    cancelControllerRef.current = cancelController;
     try {
       // Checa antes de tentar subir: se o Vercel Blob não estiver configurado
       // no servidor, a biblioteca de upload só devolve um erro genérico
@@ -176,13 +183,15 @@ export default function WordAddinPage() {
         blobResult = await uploadWithRetry(fileName, fileBlob, {
           handleUploadUrl: '/api/word-addin/blob-upload',
           contentType: DOCX_MIME,
-          onStatus: ({ percentage, attempt, retrying }) => {
+          externalSignal: cancelController.signal,
+          onStatus: ({ percentage, attempt, retrying, elapsedSeconds }) => {
             if (retrying) {
               setStatus(`Conexão travou perto do fim do envio. Tentando de novo (tentativa ${attempt}/4)...`);
             } else {
               setStatus(
                 `Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... ${percentage}%` +
-                  (attempt > 1 ? ` (tentativa ${attempt}/4)` : '')
+                  (attempt > 1 ? ` (tentativa ${attempt}/4)` : '') +
+                  (elapsedSeconds != null ? ` — ${elapsedSeconds}s` : '')
               );
             }
           },
@@ -195,7 +204,9 @@ export default function WordAddinPage() {
         // novo no suplemento). uploadWithRetry já tenta de novo sozinho antes
         // de desistir (ver lib/blobUpload.js).
         throw new Error(
-          `Falha ao enviar o arquivo: ${err.message}. Se persistir, feche este painel e abra de novo para renovar o login.`
+          err.message === 'envio cancelado.'
+            ? 'envio cancelado.'
+            : `Falha ao enviar o arquivo: ${err.message}. Se persistir, feche este painel e abra de novo para renovar o login.`
         );
       }
 
@@ -211,17 +222,12 @@ export default function WordAddinPage() {
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Falha ao vincular.');
-      const messages = {
-        ok: '✅ Word e PDF anexados ao lead no monday.com.',
-        timeout: '✅ Word anexado. A conversão para PDF está demorando — confira o lead em alguns instantes.',
-        error: `✅ Word anexado. A conversão automática para PDF falhou${data.pdfError ? `: ${data.pdfError}` : ''} (o Word em si já está salvo no CRM).`,
-        skipped: '✅ Word anexado ao lead no monday.com. (Conversão automática para PDF não está configurada.)',
-      };
-      setStatus(messages[data.pdfStatus] || '✅ Anexado ao CRM.');
+      setStatus('✅ Word anexado ao lead no monday.com.');
     } catch (err) {
       setStatus(`❌ ${err.message}`);
     } finally {
       setFinalizing(false);
+      cancelControllerRef.current = null;
     }
   }
 
@@ -305,12 +311,21 @@ export default function WordAddinPage() {
 
               <div style={styles.sectionTitle}>Finalizar</div>
               <button style={styles.primaryBtn} disabled={finalizing} onClick={handleFinalize}>
-                {finalizing ? 'Enviando...' : 'Vincular proposta ao CRM (Word + PDF)'}
+                {finalizing ? 'Enviando...' : 'Vincular proposta ao CRM'}
               </button>
+              {finalizing && (
+                <button
+                  type="button"
+                  style={{ ...styles.linkBtn, display: 'block', margin: '8px auto 0' }}
+                  onClick={handleCancelUpload}
+                >
+                  Cancelar envio
+                </button>
+              )}
               <p style={styles.hint}>
-                Isso anexa o arquivo do Word (e gera um PDF automaticamente) direto no card deste
-                cliente no monday.com — pode fazer isso quantas vezes quiser conforme for editando
-                a proposta; a versão mais recente sempre fica registrada.
+                Isso anexa o arquivo do Word direto no card deste cliente no monday.com — pode fazer
+                isso quantas vezes quiser conforme for editando a proposta; a versão mais recente
+                sempre fica registrada.
               </p>
             </>
           )}

@@ -35,6 +35,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [deletingAssetId, setDeletingAssetId] = useState(null);
   const [fileError, setFileError] = useState('');
   const fileInputRef = useRef(null);
+  const cancelUploadControllerRef = useRef(null);
 
   useEffect(() => {
     setForm({ ...item });
@@ -130,6 +131,8 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
     setFileError('');
     const fileSizeMb = file.size / (1024 * 1024);
     setUploadingFile({ name: file.name, status: `Enviando (${fileSizeMb.toFixed(1)}MB)... 0%` });
+    const cancelController = new AbortController();
+    cancelUploadControllerRef.current = cancelController;
 
     try {
       // Mesma checagem do suplemento do Word: sem isso, se o Vercel Blob não
@@ -146,12 +149,14 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
       const blobResult = await uploadWithRetry(file.name, file, {
         handleUploadUrl: '/api/files/blob-upload',
         contentType: file.type || 'application/octet-stream',
-        onStatus: ({ percentage, attempt, retrying }) => {
+        externalSignal: cancelController.signal,
+        onStatus: ({ percentage, attempt, retrying, elapsedSeconds }) => {
           setUploadingFile({
             name: file.name,
             status: retrying
               ? `Conexão travou perto do fim. Tentando de novo (tentativa ${attempt}/4)...`
-              : `Enviando (${fileSizeMb.toFixed(1)}MB)... ${percentage}%${attempt > 1 ? ` (tentativa ${attempt}/4)` : ''}`,
+              : `Enviando (${fileSizeMb.toFixed(1)}MB)... ${percentage}%${attempt > 1 ? ` (tentativa ${attempt}/4)` : ''}` +
+                (elapsedSeconds != null ? ` — ${elapsedSeconds}s` : ''),
           });
         },
       });
@@ -169,7 +174,12 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
       setFileError(`Falha ao enviar "${file.name}": ${err.message}`);
     } finally {
       setUploadingFile(null);
+      cancelUploadControllerRef.current = null;
     }
+  }
+
+  function handleCancelFileUpload() {
+    cancelUploadControllerRef.current?.abort();
   }
 
   async function handleDeleteFile(file) {
@@ -284,7 +294,15 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           )}
           {uploadingFile && (
             <div style={{ color: '#037f4c', fontSize: '0.85rem', margin: '4px 0 8px' }}>
-              {uploadingFile.name}: {uploadingFile.status}
+              {uploadingFile.name}: {uploadingFile.status}{' '}
+              <button
+                type="button"
+                className="btn-link"
+                style={{ fontSize: '0.85rem' }}
+                onClick={handleCancelFileUpload}
+              >
+                Cancelar envio
+              </button>
             </div>
           )}
           <input
