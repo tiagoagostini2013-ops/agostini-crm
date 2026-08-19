@@ -2,7 +2,7 @@
 <!--
   Suplemento do Word — CRM Agostini.
 
-  ANTES DE USAR: troque TODAS as ocorrências de PAINEL_URL_AQUI abaixo pelo
+  ANTES DE USAR: troque TODAS as ocorrências de agostini-crm.vercel.app abaixo pelo
   domínio real do painel publicado na Vercel (ex: agostini-crm.vercel.app),
   sem "https://" duplicado. Pode usar localizar-e-substituir num editor de
   texto simples (Bloco de Notas serve).
@@ -24,12 +24,12 @@
   <DefaultLocale>pt-BR</DefaultLocale>
   <DisplayName DefaultValue="CRM Agostini" />
   <Description DefaultValue="Busca dados de clientes do CRM Agostini e vincula a proposta ao lead certo, direto do Word." />
-  <IconUrl DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-32.png" />
-  <HighResIconUrl DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-80.png" />
-  <SupportUrl DefaultValue="https://PAINEL_URL_AQUI" />
+  <IconUrl DefaultValue="https://agostini-crm.vercel.app/word-addin/icon-32.png" />
+  <HighResIconUrl DefaultValue="https://agostini-crm.vercel.app/word-addin/icon-80.png" />
+  <SupportUrl DefaultValue="https://agostini-crm.vercel.app" />
 
   <AppDomains>
-    <AppDomain>https://PAINEL_URL_AQUI</AppDomain>
+    <AppDomain>https://agostini-crm.vercel.app</AppDomain>
   </AppDomains>
 
   <Hosts>
@@ -37,7 +37,7 @@
   </Hosts>
 
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://PAINEL_URL_AQUI/word-addin" />
+    <SourceLocation DefaultValue="https://agostini-crm.vercel.app/word-addin" />
   </DefaultSettings>
 
   <Permissions>ReadWriteDocument</Permissions>
@@ -85,14 +85,14 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-32.png" />
-        <bt:Image id="Icon.32x32" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-32.png" />
-        <bt:Image id="Icon.80x80" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-80.png" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://agostini-crm.vercel.app/word-addin/icon-32.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://agostini-crm.vercel.app/word-addin/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://agostini-crm.vercel.app/word-addin/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://PAINEL_URL_AQUI/word-addin" />
-        <bt:Url id="Taskpane.Url" DefaultValue="https://PAINEL_URL_AQUI/word-addin" />
-        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://PAINEL_URL_AQUI" />
+        <bt:Url id="Commands.Url" DefaultValue="https://agostini-crm.vercel.app/word-addin" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://agostini-crm.vercel.app/word-addin" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://agostini-crm.vercel.app" />
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GetStarted.Title" DefaultValue="O suplemento CRM Agostini já está pronto!" />
