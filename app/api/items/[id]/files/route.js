@@ -4,6 +4,7 @@ import { uploadFileToItem, addItemNote, fetchItemFileColumnRaw } from '../../../
 import { COLUMNS } from '../../../../../lib/config';
 import { SESSION_COOKIE, getSessionPayload } from '../../../../../lib/auth';
 import { mapFileColumnFiles } from '../../../../../lib/transform';
+import { fetchBlobContent } from '../../../../../lib/blobServer';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // folga pra baixar o arquivo do Blob e subir pro monday.com
@@ -31,10 +32,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'itemId, blobUrl e fileName são obrigatórios.' }, { status: 400 });
     }
 
-    const blobRes = await fetch(blobUrl);
-    if (!blobRes.ok) {
-      throw new Error('Não foi possível ler o arquivo recém enviado (link inválido ou expirado).');
-    }
+    const blobRes = await fetchBlobContent(blobUrl);
     const buffer = Buffer.from(await blobRes.arrayBuffer());
     const safeName = String(fileName).replace(/[\\/]/g, '-');
     const mimeType = blobRes.headers.get('content-type') || 'application/octet-stream';

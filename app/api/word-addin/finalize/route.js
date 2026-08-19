@@ -3,6 +3,7 @@ import { del } from '@vercel/blob';
 import { uploadFileToItem, addItemNote } from '../../../../lib/monday';
 import { COLUMNS } from '../../../../lib/config';
 import { SESSION_COOKIE, getSessionPayload } from '../../../../lib/auth';
+import { fetchBlobContent } from '../../../../lib/blobServer';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // segundos — dá folga pra baixar o .docx do Blob e subir pro monday.com
@@ -37,10 +38,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'itemId e blobUrl são obrigatórios.' }, { status: 400 });
     }
 
-    const blobRes = await fetch(blobUrl);
-    if (!blobRes.ok) {
-      throw new Error('Não foi possível ler o arquivo recém enviado (blobUrl inválida ou expirada).');
-    }
+    const blobRes = await fetchBlobContent(blobUrl);
     const docxBuffer = Buffer.from(await blobRes.arrayBuffer());
     const safeName = (fileName || 'Proposta.docx').replace(/[\\/]/g, '-');
 
