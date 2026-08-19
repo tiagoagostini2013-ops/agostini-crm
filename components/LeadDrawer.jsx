@@ -150,8 +150,8 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           setUploadingFile({
             name: file.name,
             status: retrying
-              ? `Conexão travou perto do fim. Tentando de novo (tentativa ${attempt}/3)...`
-              : `Enviando (${fileSizeMb.toFixed(1)}MB)... ${percentage}%${attempt > 1 ? ` (tentativa ${attempt}/3)` : ''}`,
+              ? `Conexão travou perto do fim. Tentando de novo (tentativa ${attempt}/4)...`
+              : `Enviando (${fileSizeMb.toFixed(1)}MB)... ${percentage}%${attempt > 1 ? ` (tentativa ${attempt}/4)` : ''}`,
           });
         },
       });

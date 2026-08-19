@@ -178,11 +178,11 @@ export default function WordAddinPage() {
           contentType: DOCX_MIME,
           onStatus: ({ percentage, attempt, retrying }) => {
             if (retrying) {
-              setStatus(`Conexão travou perto do fim do envio. Tentando de novo (tentativa ${attempt}/3)...`);
+              setStatus(`Conexão travou perto do fim do envio. Tentando de novo (tentativa ${attempt}/4)...`);
             } else {
               setStatus(
                 `Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... ${percentage}%` +
-                  (attempt > 1 ? ` (tentativa ${attempt}/3)` : '')
+                  (attempt > 1 ? ` (tentativa ${attempt}/4)` : '')
               );
             }
           },
