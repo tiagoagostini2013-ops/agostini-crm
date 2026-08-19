@@ -148,6 +148,18 @@ export default function WordAddinPage() {
     setFinalizing(true);
     setStatus('Lendo o documento...');
     try {
+      // Checa antes de tentar subir: se o Vercel Blob não estiver configurado
+      // no servidor, a biblioteca de upload só devolve um erro genérico
+      // ("Failed to retrieve the client token") que não ajuda ninguém a
+      // resolver — aqui a gente já avisa o que realmente falta.
+      const statusRes = await fetch('/api/word-addin/blob-status');
+      const statusData = await parseJsonResponse(statusRes).catch(() => ({ configured: true }));
+      if (statusRes.ok && statusData.configured === false) {
+        throw new Error(
+          'O envio de propostas ainda não está configurado neste servidor. Peça para quem administra o painel criar o Blob Store na Vercel (Storage → Create Database → Blob) e reimplantar o projeto.'
+        );
+      }
+
       const fileBlob = await getDocumentAsBlob();
       const fileName = `Proposta - ${selected.name || 'Cliente'}.docx`;
 
@@ -156,11 +168,22 @@ export default function WordAddinPage() {
       // função da Vercel aceita num POST só, então só a URL do resultado
       // (bem pequena) é que vai pro /finalize.
       setStatus('Enviando o arquivo...');
-      const blobResult = await upload(fileName, fileBlob, {
-        access: 'public',
-        handleUploadUrl: '/api/word-addin/blob-upload',
-        contentType: DOCX_MIME,
-      });
+      let blobResult;
+      try {
+        blobResult = await upload(fileName, fileBlob, {
+          access: 'public',
+          handleUploadUrl: '/api/word-addin/blob-upload',
+          contentType: DOCX_MIME,
+        });
+      } catch (err) {
+        // A biblioteca do Vercel Blob esconde o motivo real por trás de uma
+        // mensagem genérica ("Failed to retrieve the client token") — como já
+        // checamos a configuração acima, se chegou aqui é provável que seja a
+        // sessão (tente sair e entrar de novo no suplemento).
+        throw new Error(
+          `Falha ao enviar o arquivo (${err.message}). Se persistir, feche este painel e abra de novo para renovar o login.`
+        );
+      }
 
       setStatus('Vinculando ao CRM...');
       const res = await fetch('/api/word-addin/finalize', {
