@@ -164,18 +164,22 @@ export default function WordAddinPage() {
 
       const fileBlob = await getDocumentAsBlob();
       const fileName = `Proposta - ${selected.name || 'Cliente'}.docx`;
+      const fileSizeMb = fileBlob.size / (1024 * 1024);
 
       // Sobe o arquivo direto pro Vercel Blob (bypassa nosso backend) — uma
       // proposta técnica com fotos/desenhos passa fácil dos 4.5MB que uma
       // função da Vercel aceita num POST só, então só a URL do resultado
       // (bem pequena) é que vai pro /finalize.
-      setStatus('Enviando o arquivo...');
+      setStatus(`Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)...`);
       let blobResult;
       try {
         blobResult = await upload(fileName, fileBlob, {
           access: 'public',
           handleUploadUrl: '/api/word-addin/blob-upload',
           contentType: DOCX_MIME,
+          onUploadProgress: ({ percentage }) => {
+            setStatus(`Enviando o arquivo (${fileSizeMb.toFixed(1)}MB)... ${percentage}%`);
+          },
         });
       } catch (err) {
         // A biblioteca do Vercel Blob esconde o motivo real por trás de uma
