@@ -388,6 +388,12 @@ a { color: var(--accent); }
 .banner-info { background: #eaf5fb; color: #004f70; border-bottom: 1px solid #cfe8f4; }
 .banner-warning { background: #fff8e6; color: #8a6100; border-bottom: 1px solid #ffe6a3; }
 .banner-warning .btn-link { font-weight: 700; }
+.banner-dismissible { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.banner-close {
+  border: none; background: transparent; cursor: pointer; font-size: 1.15rem; line-height: 1;
+  color: inherit; opacity: 0.55; padding: 0 2px; flex-shrink: 0;
+}
+.banner-close:hover { opacity: 1; }
 
 .loading-screen {
   display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft);

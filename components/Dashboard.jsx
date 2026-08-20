@@ -34,10 +34,15 @@ export default function Dashboard() {
   const [view, setView] = useState('kanban');
   const [showNewLead, setShowNewLead] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
+  // Aviso de follow-up atrasado/sem data — fechável (pedido do Tiago: ele tem
+  // TOC e TDAH, um banner fixo que não fecha é ruim pra ele), mas volta a
+  // aparecer a cada atualização do CRM (loadAll), não só uma vez por sessão.
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   async function loadAll() {
     setLoading(true);
     setError('');
+    setBannerDismissed(false);
     try {
       const [metaRes, itemsRes] = await Promise.all([fetch('/api/meta'), fetch('/api/items')]);
       const metaData = await metaRes.json();
@@ -193,13 +198,23 @@ export default function Dashboard() {
 
       {error && <div className="banner banner-error">{error}</div>}
 
-      {!error && alertCount > 0 && view !== 'agenda' && (
-        <div className="banner banner-warning">
-          ⚠ {agenda.atrasados.length > 0 && <>{agenda.atrasados.length} lead(s) com follow-up atrasado</>}
-          {agenda.atrasados.length > 0 && agenda.semData.length > 0 && ' e '}
-          {agenda.semData.length > 0 && <>{agenda.semData.length} sem follow-up agendado</>} precisam de atenção.{' '}
-          <button className="btn-link" onClick={() => setView('agenda')}>
-            Ver agenda →
+      {!error && alertCount > 0 && view !== 'agenda' && !bannerDismissed && (
+        <div className="banner banner-warning banner-dismissible">
+          <span>
+            ⚠ {agenda.atrasados.length > 0 && <>{agenda.atrasados.length} lead(s) com follow-up atrasado</>}
+            {agenda.atrasados.length > 0 && agenda.semData.length > 0 && ' e '}
+            {agenda.semData.length > 0 && <>{agenda.semData.length} sem follow-up agendado</>} precisam de atenção.{' '}
+            <button className="btn-link" onClick={() => setView('agenda')}>
+              Ver agenda →
+            </button>
+          </span>
+          <button
+            className="banner-close"
+            onClick={() => setBannerDismissed(true)}
+            aria-label="Fechar aviso"
+            title="Fechar (volta a aparecer na próxima atualização)"
+          >
+            ×
           </button>
         </div>
       )}
