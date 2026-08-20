@@ -15,6 +15,16 @@ function fmtDate(d) {
   }
 }
 
+// Formata milissegundos acumulados de visualização como "Xmin" (ou "Xs" se
+// menos de 1 minuto) — não precisa de mais precisão que isso pra uma
+// estimativa de tempo de leitura.
+function fmtDuration(ms) {
+  if (!ms || ms < 1000) return '—';
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  return `${Math.round(totalSec / 60)}min`;
+}
+
 const QUALIFY_FIELDS = [
   { key: 'produtoInteresse', label: 'Aplicação / produto de interesse' },
   { key: 'cargoDecisor', label: 'Decisor identificado' },
@@ -40,6 +50,29 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [pendingCloseChanges, setPendingCloseChanges] = useState(null); // mudanças pendentes até confirmar o handoff
   const [handoffSaving, setHandoffSaving] = useState(false);
   const [handoffError, setHandoffError] = useState('');
+  // Rastreio de leitura de propostas (PDF gerado pelo suplemento do Word) —
+  // só leitura aqui, o registro em si é criado em
+  // app/api/word-addin/finalize/route.js. `copyingSendId` controla o botão
+  // "copiar link de novo" de cada envio individualmente.
+  const rastreioPropostas = item.rastreioPropostas || [];
+  const [copyingSendId, setCopyingSendId] = useState(null);
+  const [copiedSendId, setCopiedSendId] = useState(null);
+
+  async function handleCopyTrackLink(sendId) {
+    setCopyingSendId(sendId);
+    try {
+      const res = await fetch(`/api/proposals/track/${item.id}/${sendId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Não foi possível gerar o link.');
+      await navigator.clipboard.writeText(data.url);
+      setCopiedSendId(sendId);
+      setTimeout(() => setCopiedSendId((cur) => (cur === sendId ? null : cur)), 2000);
+    } catch (err) {
+      setFileError(err.message);
+    } finally {
+      setCopyingSendId(null);
+    }
+  }
 
   useEffect(() => {
     setForm({ ...item });
@@ -451,6 +484,68 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           >
             {uploadingFile ? 'Enviando...' : '+ Adicionar arquivo'}
           </button>
+        </div>
+
+        <div className="drawer-section">
+          <h3>Rastreio de propostas enviadas</h3>
+          <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+            "Visualizada" só conta quando o link é aberto de verdade num navegador — colar num grupo/conversa do
+            WhatsApp não conta, só o clique do cliente. Ainda assim é uma estimativa, não uma confirmação de leitura
+            atenta: o tempo somado só conta enquanto a aba fica em primeiro plano, e reabrir o mesmo link soma no
+            mesmo registro.
+          </p>
+          {rastreioPropostas.length === 0 ? (
+            <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
+              Nenhuma proposta em PDF enviada com rastreio ainda — gere uma pelo suplemento do Word ("Vincular
+              proposta ao CRM").
+            </div>
+          ) : (
+            <table className="metrics-table">
+              <thead>
+                <tr>
+                  <th>Arquivo</th>
+                  <th>Enviada</th>
+                  <th>Status</th>
+                  <th>Tempo total</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...rastreioPropostas]
+                  .sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt))
+                  .map((r) => (
+                    <tr key={r.sendId}>
+                      <td>
+                        {r.fileName}
+                        {r.sentBy && <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem' }}>por {r.sentBy}</div>}
+                      </td>
+                      <td>{fmtDate(r.sentAt)}</td>
+                      <td>
+                        {r.firstViewedAt ? (
+                          <span style={{ color: 'var(--good)' }}>
+                            ✅ Visualizada em {fmtDate(r.firstViewedAt)} ({r.viewCount}x)
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--ink-soft)' }}>Ainda não visualizada</span>
+                        )}
+                      </td>
+                      <td>{fmtDuration(r.totalViewMs)}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ fontSize: '0.8rem' }}
+                          disabled={copyingSendId === r.sendId}
+                          onClick={() => handleCopyTrackLink(r.sendId)}
+                        >
+                          {copiedSendId === r.sendId ? '✅ Copiado' : copyingSendId === r.sendId ? '...' : '📋 Copiar link'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         <div className="drawer-section">

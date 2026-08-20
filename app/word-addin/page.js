@@ -102,6 +102,8 @@ export default function WordAddinPage() {
   const [selected, setSelected] = useState(null);
   const [status, setStatus] = useState('');
   const [finalizing, setFinalizing] = useState(false);
+  const [trackUrl, setTrackUrl] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
   const debounceRef = useRef(null);
   const cancelControllerRef = useRef(null);
 
@@ -150,10 +152,23 @@ export default function WordAddinPage() {
     cancelControllerRef.current?.abort();
   }
 
+  async function handleCopyLink() {
+    try {
+      await navigator.clipboard.writeText(trackUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      // navigator.clipboard pode falhar em contexto não seguro/sem permissão
+      // — o link já fica visível selecionável na tela como alternativa.
+    }
+  }
+
   async function handleFinalize() {
     if (!selected) return;
     setFinalizing(true);
     setStatus('Lendo o documento...');
+    setTrackUrl('');
+    setLinkCopied(false);
     const cancelController = new AbortController();
     cancelControllerRef.current = cancelController;
     try {
@@ -222,7 +237,14 @@ export default function WordAddinPage() {
       });
       const data = await parseJsonResponse(res);
       if (!res.ok) throw new Error(data.error || 'Falha ao vincular.');
-      setStatus('✅ Word anexado ao lead no monday.com.');
+      if (data.trackUrl) {
+        setStatus('✅ Word e PDF anexados ao lead. Copie o link abaixo e mande pro cliente em vez do arquivo — é o que ativa o aviso de "proposta lida".');
+        setTrackUrl(data.trackUrl);
+      } else if (data.pdfWarning) {
+        setStatus(`✅ Word anexado ao lead. ⚠️ ${data.pdfWarning}`);
+      } else {
+        setStatus('✅ Word anexado ao lead no monday.com.');
+      }
     } catch (err) {
       setStatus(`❌ ${err.message}`);
     } finally {
@@ -282,6 +304,7 @@ export default function WordAddinPage() {
                     setSelected(null);
                     setStatus('');
                     setQuery('');
+                    setTrackUrl('');
                   }}
                 >
                   Trocar cliente
@@ -332,6 +355,20 @@ export default function WordAddinPage() {
           )}
 
           {status && <div style={styles.status}>{status}</div>}
+          {trackUrl && (
+            <div style={styles.trackBox}>
+              <div style={styles.trackLabel}>Link de rastreio (mande este link, não o arquivo)</div>
+              <input style={styles.trackInput} readOnly value={trackUrl} onFocus={(e) => e.target.select()} />
+              <button type="button" style={styles.primaryBtn} onClick={handleCopyLink}>
+                {linkCopied ? '✅ Copiado!' : '📋 Copiar link'}
+              </button>
+              <p style={styles.hint}>
+                "Visualizada" só é registrado quando o link é aberto de verdade num navegador — colar num
+                grupo/conversa do WhatsApp não conta, só o clique do cliente. Ainda assim, é uma estimativa: não
+                garante leitura atenta, e o tempo somado só conta enquanto a aba fica em primeiro plano.
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -441,4 +478,12 @@ const styles = {
   },
   hint: { fontSize: 11, color: '#56636f', marginTop: 8, lineHeight: 1.4 },
   status: { marginTop: 14, fontSize: 12, padding: '8px 10px', background: '#F5F8F7', borderRadius: 8 },
+  trackBox: {
+    marginTop: 10, padding: '10px 12px', border: '1px solid #d5e6e0', borderRadius: 8, background: '#F5F8F7',
+  },
+  trackLabel: { fontSize: 11, color: '#56636f', marginBottom: 6 },
+  trackInput: {
+    width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: 6, border: '1px solid #d5dbe0',
+    fontSize: 12, marginBottom: 8, background: '#fff',
+  },
 };
