@@ -247,7 +247,7 @@ export default function Dashboard() {
 
       {meta && items && view === 'metrics' && (
         <div className="metrics-scroll">
-          <Metrics items={filteredItems} meta={meta} usersById={usersById} />
+          <Metrics items={filteredItems} meta={meta} usersById={usersById} currentUser={currentUser} />
         </div>
       )}
 
