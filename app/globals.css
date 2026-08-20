@@ -393,6 +393,25 @@ a { color: var(--accent); }
   display: flex; align-items: center; justify-content: center; height: 100%; color: var(--ink-soft);
 }
 
+/* ---------- Dashboard Gerencial (admins) ---------- */
+.gerencial-legend {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; font-size: 0.8rem; color: var(--ink-soft);
+}
+.gerencial-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.gerencial-legend i {
+  display: inline-block; width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0;
+}
+.gerencial-tooltip {
+  position: absolute; top: 4px; transform: translateX(-50%);
+  background: var(--ink); color: #fff; border-radius: 8px; padding: 8px 12px;
+  font-size: 0.76rem; line-height: 1.5; white-space: nowrap; pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25); z-index: 5;
+}
+.gerencial-tooltip-title { font-weight: 700; margin-bottom: 4px; font-size: 0.74rem; }
+.gerencial-tooltip i {
+  display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px;
+}
+
 /* ---------- Login page ---------- */
 .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink);
