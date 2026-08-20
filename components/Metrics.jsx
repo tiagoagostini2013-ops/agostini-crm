@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { FORECAST_STAGES } from '../lib/config';
+import LeadListModal from './LeadListModal';
 
 function formatMoney(v) {
   const n = Number(v);
@@ -45,8 +46,22 @@ const STAGE_ENTRY_FIELD = {
 // sem precisar de nenhuma chamada extra ao monday.com. A única exceção é o
 // forecast ponderado (Fase 5) logo abaixo, que busca as probabilidades por
 // estágio salvas no board de Configurações.
-export default function Metrics({ items, meta, usersById, currentUser }) {
+export default function Metrics({ items, meta, usersById, currentUser, onSelect }) {
   const total = items.length;
+
+  // ---------- Drill-down: clicar num número mostra os leads por trás dele ----------
+  // Pedido do Tiago em 20/08/2026 — a tela só mostrava agregados, sem jeito de
+  // ver ou abrir os leads que compõem cada número. `onSelect` (passado pelo
+  // Dashboard) é o mesmo callback que já abre o card completo do lead a
+  // partir do Kanban/Agenda/Pós-venda — reaproveitado aqui.
+  const [drillDown, setDrillDown] = useState(null);
+  function openDrill(title, leads, subtitle) {
+    setDrillDown({ title, subtitle, sections: [{ leads }] });
+  }
+  function handleSelectLead(id) {
+    setDrillDown(null);
+    onSelect?.(id);
+  }
 
   const stageCounts = useMemo(() => {
     const map = {};
@@ -116,27 +131,36 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
   const meuPrimeiroContato = useMemo(() => {
     if (!currentUser?.mondayUserId) return null;
     const meusLeads = items.filter((it) => it.responsavelIds.includes(String(currentUser.mondayUserId)));
-    const diffs = meusLeads.map((it) => diffDays(toDateOnly(it.createdAt), toDateOnly(it.dataPrimeiroContato)));
-    const { media, n } = avgOf(diffs);
-    if (!n) return { media: null, n: 0, noPrazoPct: null };
-    const noPrazo = diffs.filter((d) => d !== null && d <= 1).length;
-    return { media, n, noPrazoPct: (noPrazo / n) * 100 };
+    const comLeads = meusLeads
+      .map((it) => ({ it, d: diffDays(toDateOnly(it.createdAt), toDateOnly(it.dataPrimeiroContato)) }))
+      .filter((x) => x.d !== null);
+    if (!comLeads.length) return { media: null, n: 0, noPrazoPct: null, leads: [] };
+    const { media, n } = avgOf(comLeads.map((x) => x.d));
+    const noPrazo = comLeads.filter((x) => x.d <= 1).length;
+    return { media, n, noPrazoPct: (noPrazo / n) * 100, leads: comLeads.map((x) => x.it) };
   }, [items, currentUser]);
 
   // Tempo médio em cada etapa do funil — agregado, sem quebra por pessoa
   // (aberto a todos, como o resto da aba Métricas).
   const temposPorEstagio = useMemo(() => {
+    // Além da média, guarda os leads que efetivamente entram na conta (ambas
+    // as datas presentes e diferença válida) — é o que a lista de drill-down
+    // mostra ao clicar na linha.
     function etapa(label, fromField, toField) {
-      const diffs = items.map((it) => diffDays(toDateOnly(it[fromField]), toDateOnly(it[toField])));
-      return { label, ...avgOf(diffs) };
+      const comLeads = items
+        .map((it) => ({ it, d: diffDays(toDateOnly(it[fromField]), toDateOnly(it[toField])) }))
+        .filter((x) => x.d !== null);
+      return { label, ...avgOf(comLeads.map((x) => x.d)), leads: comLeads.map((x) => x.it) };
     }
     function etapaAteResultado(label, fromField) {
-      const diffs = items.map((it) => {
-        const from = toDateOnly(it[fromField]);
-        const to = toDateOnly(it.dataFechamento) || toDateOnly(it.dataPerda);
-        return diffDays(from, to);
-      });
-      return { label, ...avgOf(diffs) };
+      const comLeads = items
+        .map((it) => {
+          const from = toDateOnly(it[fromField]);
+          const to = toDateOnly(it.dataFechamento) || toDateOnly(it.dataPerda);
+          return { it, d: diffDays(from, to) };
+        })
+        .filter((x) => x.d !== null);
+      return { label, ...avgOf(comLeads.map((x) => x.d)), leads: comLeads.map((x) => x.it) };
     }
     return [
       etapa('Lead → Qualificado', 'createdAt', 'dataQualificacao'),
@@ -285,26 +309,58 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
   return (
     <div className="metrics-view">
       <div className="metrics-grid">
-        <div className="metric-card">
+        <div
+          className="metric-card card-clickable"
+          onClick={() => openDrill('Total de leads (no filtro atual)', items)}
+          title="Ver os leads"
+        >
           <div className="metric-label">Total de leads (no filtro atual)</div>
           <div className="metric-value">{total}</div>
         </div>
-        <div className="metric-card">
+        <div
+          className="metric-card card-clickable"
+          onClick={() =>
+            openDrill('Fechados (numerador da taxa de conversão)', fechados, `Taxa de conversão = fechados ÷ total no filtro atual (${total} lead(s)).`)
+          }
+          title="Ver os leads fechados"
+        >
           <div className="metric-label">Taxa de conversão (Lead → Fechado)</div>
           <div className="metric-value">{taxaConversao === null ? '—' : `${taxaConversao.toFixed(1)}%`}</div>
         </div>
-        <div className="metric-card">
+        <div
+          className="metric-card card-clickable"
+          onClick={() => openDrill('Fechados usados no ticket médio', fechados.filter((it) => Number(it.valorEstimado) > 0))}
+          title="Ver os leads fechados"
+        >
           <div className="metric-label">Ticket médio (fechados)</div>
           <div className="metric-value">{ticketMedio === null ? '—' : formatMoney(ticketMedio)}</div>
         </div>
-        <div className="metric-card">
+        <div
+          className={`metric-card${motivosPerda.length ? ' card-clickable' : ''}`}
+          onClick={
+            motivosPerda.length
+              ? () => openDrill(`Perdidos por "${motivosPerda[0][0]}"`, perdidos.filter((it) => (it.motivoPerda || 'Não informado') === motivosPerda[0][0]))
+              : undefined
+          }
+          title={motivosPerda.length ? 'Ver os leads perdidos por esse motivo' : undefined}
+        >
           <div className="metric-label">Motivo de perda mais comum</div>
           <div className="metric-value metric-value-text">{motivosPerda.length ? motivosPerda[0][0] : '—'}</div>
           {motivosPerda.length > 0 && (
             <div className="metric-sub">{motivosPerda[0][1]} caso(s) no filtro atual</div>
           )}
         </div>
-        <div className="metric-card">
+        <div
+          className="metric-card card-clickable"
+          onClick={() =>
+            openDrill(
+              'Leads no funil aberto (base do forecast)',
+              items.filter((it) => FORECAST_STAGES.includes(it.estagio)),
+              'Todo lead em estágio aberto (não Fechado nem Perdido) entra na previsão ponderada.'
+            )
+          }
+          title="Ver os leads em aberto"
+        >
           <div className="metric-label">Previsão ponderada (forecast)</div>
           <div className="metric-value">
             {probsLoading ? '...' : forecastTotal === null ? '—' : formatMoney(forecastTotal)}
@@ -312,7 +368,15 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
           <div className="metric-sub">Funil aberto × probabilidade por estágio</div>
         </div>
         {currentUser?.mondayUserId && (
-          <div className="metric-card">
+          <div
+            className={`metric-card${meuPrimeiroContato?.n ? ' card-clickable' : ''}`}
+            onClick={
+              meuPrimeiroContato?.n
+                ? () => openDrill('Meus leads com data de 1º contato', meuPrimeiroContato.leads)
+                : undefined
+            }
+            title={meuPrimeiroContato?.n ? 'Ver meus leads' : undefined}
+          >
             <div className="metric-label">Meu tempo até o 1º contato</div>
             <div className="metric-value">
               {meuPrimeiroContato?.media != null ? `${meuPrimeiroContato.media.toFixed(1)} dia(s)` : '—'}
@@ -330,7 +394,12 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
         <h3>Funil por estágio</h3>
         <div className="funnel">
           {(meta.stages || []).map((s) => (
-            <div className="funnel-row" key={s.value}>
+            <div
+              className="funnel-row row-clickable"
+              key={s.value}
+              onClick={() => openDrill(`Leads em "${s.value}"`, items.filter((it) => it.estagio === s.value))}
+              title="Ver os leads"
+            >
               <div className="funnel-label">{s.value}</div>
               <div className="funnel-bar-track">
                 <div
@@ -361,7 +430,12 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
             </thead>
             <tbody>
               {temposPorEstagio.map((t) => (
-                <tr key={t.label}>
+                <tr
+                  key={t.label}
+                  className={t.leads.length ? 'row-clickable' : undefined}
+                  onClick={t.leads.length ? () => openDrill(`Leads em "${t.label}"`, t.leads) : undefined}
+                  title={t.leads.length ? 'Ver os leads' : undefined}
+                >
                   <td>{t.label}</td>
                   <td>{t.media != null ? `${t.media.toFixed(1)} dia(s)` : '—'}</td>
                   <td>{t.n}</td>
@@ -385,7 +459,12 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
             </thead>
             <tbody>
               {conversaoPorSegmento.map((r) => (
-                <tr key={r.segmento}>
+                <tr
+                  key={r.segmento}
+                  className="row-clickable"
+                  onClick={() => openDrill(`Leads em "${r.segmento}"`, items.filter((it) => (it.segmento || 'Sem segmento') === r.segmento))}
+                  title="Ver os leads"
+                >
                   <td>{r.segmento}</td>
                   <td>{r.total}</td>
                   <td>{r.fechados}</td>
@@ -435,10 +514,15 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
               const contribuicao = probs ? valorAberto * ((probs[s] || 0) / 100) : null;
               const realizado = realizadoPorEstagio[s];
               return (
-                <tr key={s}>
+                <tr
+                  key={s}
+                  className="row-clickable"
+                  onClick={() => openDrill(`Leads em "${s}"`, items.filter((it) => it.estagio === s))}
+                  title="Ver os leads"
+                >
                   <td>{s}</td>
                   <td>{formatMoney(valorAberto)}</td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     {currentUser?.admin ? (
                       <input
                         type="number"
@@ -495,7 +579,19 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
             </thead>
             <tbody>
               {ranking.map((r) => (
-                <tr key={r.id}>
+                <tr
+                  key={r.id}
+                  className="row-clickable"
+                  onClick={() =>
+                    openDrill(
+                      `Leads de ${r.id === 'sem-responsavel' ? 'sem responsável' : usersById[r.id]?.name || `#${r.id}`}`,
+                      items.filter((it) =>
+                        r.id === 'sem-responsavel' ? it.responsavelIds.length === 0 : it.responsavelIds.includes(r.id)
+                      )
+                    )
+                  }
+                  title="Ver os leads"
+                >
                   <td>{r.id === 'sem-responsavel' ? 'Sem responsável' : usersById[r.id]?.name || `#${r.id}`}</td>
                   <td>{r.total}</td>
                   <td>{r.fechados}</td>
@@ -530,7 +626,12 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
               </thead>
               <tbody>
                 {motivosPerda.map(([m, c]) => (
-                  <tr key={m}>
+                  <tr
+                    key={m}
+                    className="row-clickable"
+                    onClick={() => openDrill(`Perdidos por "${m}"`, perdidos.filter((it) => (it.motivoPerda || 'Não informado') === m))}
+                    title="Ver os leads"
+                  >
                     <td>{m}</td>
                     <td>{c}</td>
                   </tr>
@@ -562,7 +663,22 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
             </thead>
             <tbody>
               {motivosDetalhado.map((r) => (
-                <tr key={`${r.motivo}|${r.segmento}|${r.canal}`}>
+                <tr
+                  key={`${r.motivo}|${r.segmento}|${r.canal}`}
+                  className="row-clickable"
+                  onClick={() =>
+                    openDrill(
+                      `Perdidos: "${r.motivo}" × ${r.segmento} × ${r.canal}`,
+                      perdidos.filter(
+                        (it) =>
+                          (it.motivoPerda || 'Não informado') === r.motivo &&
+                          (it.segmento || 'Sem segmento') === r.segmento &&
+                          (it.canalOrigem || 'Sem canal') === r.canal
+                      )
+                    )
+                  }
+                  title="Ver os leads"
+                >
                   <td>{r.motivo}</td>
                   <td>{r.segmento}</td>
                   <td>{r.canal}</td>
@@ -573,6 +689,17 @@ export default function Metrics({ items, meta, usersById, currentUser }) {
           </table>
         )}
       </div>
+
+      {drillDown && (
+        <LeadListModal
+          title={drillDown.title}
+          subtitle={drillDown.subtitle}
+          sections={drillDown.sections}
+          usersById={usersById}
+          onSelectLead={handleSelectLead}
+          onClose={() => setDrillDown(null)}
+        />
+      )}
     </div>
   );
 }

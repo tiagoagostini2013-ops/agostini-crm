@@ -268,7 +268,7 @@ export default function Dashboard() {
 
       {meta && items && view === 'metrics' && (
         <div className="metrics-scroll">
-          <Metrics items={filteredItems} meta={meta} usersById={usersById} currentUser={currentUser} />
+          <Metrics items={filteredItems} meta={meta} usersById={usersById} currentUser={currentUser} onSelect={setSelectedId} />
         </div>
       )}
 
@@ -286,7 +286,7 @@ export default function Dashboard() {
 
       {meta && items && view === 'gerencial' && currentUser?.admin && (
         <div className="metrics-scroll">
-          <Gerencial items={filteredItems} usersById={usersById} />
+          <Gerencial items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
         </div>
       )}
 

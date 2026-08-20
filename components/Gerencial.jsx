@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import LeadListModal from './LeadListModal';
 
 function formatMoney(v) {
   const n = Number(v);
@@ -63,8 +64,26 @@ function inRange(d, start, end) {
   return d && d >= start && d < end;
 }
 
-export default function Gerencial({ items, usersById }) {
+export default function Gerencial({ items, usersById, onSelect }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+
+  // ---------- Drill-down: clicar num número mostra os leads por trás dele ----------
+  // Mesmo mecanismo da aba Métricas (ver LeadListModal) — pedido do Tiago em
+  // 20/08/2026, citando especificamente o card "Perdidos hoje" que não levava
+  // a lugar nenhum ao clicar. Os blocos de Vendas × Produção (Fase 8) ficam
+  // de fora de propósito: PEDIDOS/OPs não são leads do CRM, não existe um
+  // "card completo" pra abrir pra eles (isso é a Fase 8 Parte B, não feita).
+  const [drillDown, setDrillDown] = useState(null);
+  function openDrill(title, leads, subtitle) {
+    setDrillDown({ title, subtitle, sections: [{ leads }] });
+  }
+  function openDrillSections(title, sections, subtitle) {
+    setDrillDown({ title, subtitle, sections });
+  }
+  function handleSelectLead(id) {
+    setDrillDown(null);
+    onSelect?.(id);
+  }
 
   // ---------- Fase 8 — Vendas × Produção (Parte A: painel agregado) ----------
   // Lê os boards PEDIDOS/PRODUÇÃO da fábrica via /api/producao (admin-only,
@@ -104,40 +123,42 @@ export default function Gerencial({ items, usersById }) {
   const seteDiasAtras = useMemo(() => addDays(hoje, -6), [hoje]);
 
   // ---------- KPIs do dia / dos últimos 7 dias ----------
+  // Guarda tanto a contagem quanto a lista de leads por trás de cada uma —
+  // é o que os cards clicáveis abaixo mostram no drill-down.
   const kpis = useMemo(() => {
     const out = {
-      novosHoje: 0,
-      novos7d: 0,
-      qualHoje: 0,
-      qual7d: 0,
-      fechHoje: 0,
+      novosHojeLeads: [],
+      novos7dLeads: [],
+      qualHojeLeads: [],
+      qual7dLeads: [],
+      fechHojeLeads: [],
       fechHojeValor: 0,
-      perdHoje: 0,
+      perdHojeLeads: [],
     };
     const amanha = addDays(hoje, 1);
     for (const it of items) {
       const criado = toDateOnly(it.createdAt);
-      if (inRange(criado, hoje, amanha)) out.novosHoje += 1;
-      if (inRange(criado, seteDiasAtras, amanha)) out.novos7d += 1;
+      if (inRange(criado, hoje, amanha)) out.novosHojeLeads.push(it);
+      if (inRange(criado, seteDiasAtras, amanha)) out.novos7dLeads.push(it);
 
       const qual = toDateOnly(it.dataQualificacao);
-      if (inRange(qual, hoje, amanha)) out.qualHoje += 1;
-      if (inRange(qual, seteDiasAtras, amanha)) out.qual7d += 1;
+      if (inRange(qual, hoje, amanha)) out.qualHojeLeads.push(it);
+      if (inRange(qual, seteDiasAtras, amanha)) out.qual7dLeads.push(it);
 
       const fech = toDateOnly(it.dataFechamento);
       if (inRange(fech, hoje, amanha)) {
-        out.fechHoje += 1;
+        out.fechHojeLeads.push(it);
         const v = Number(it.valorEstimado);
         if (!Number.isNaN(v)) out.fechHojeValor += v;
       }
 
       const perd = toDateOnly(it.dataPerda);
-      if (inRange(perd, hoje, amanha)) out.perdHoje += 1;
+      if (inRange(perd, hoje, amanha)) out.perdHojeLeads.push(it);
     }
     return out;
   }, [items, hoje, seteDiasAtras]);
 
-  const taxaQualificacao7d = kpis.novos7d > 0 ? (kpis.qual7d / kpis.novos7d) * 100 : null;
+  const taxaQualificacao7d = kpis.novos7dLeads.length > 0 ? (kpis.qual7dLeads.length / kpis.novos7dLeads.length) * 100 : null;
 
   // ---------- Evolução semanal (últimas 8 semanas, seg-dom) ----------
   const semanas = useMemo(() => {
@@ -145,19 +166,24 @@ export default function Gerencial({ items, usersById }) {
     for (let i = WEEKS - 1; i >= 0; i--) {
       const start = addDays(semanaInicio, -7 * i);
       const end = addDays(start, 7);
-      list.push({ start, end, novos: 0, qualificados: 0, fechados: 0 });
+      list.push({ start, end, novosLeads: [], qualificadosLeads: [], fechadosLeads: [] });
     }
     for (const it of items) {
       const criado = toDateOnly(it.createdAt);
       const qual = toDateOnly(it.dataQualificacao);
       const fech = toDateOnly(it.dataFechamento);
       for (const semana of list) {
-        if (inRange(criado, semana.start, semana.end)) semana.novos += 1;
-        if (inRange(qual, semana.start, semana.end)) semana.qualificados += 1;
-        if (inRange(fech, semana.start, semana.end)) semana.fechados += 1;
+        if (inRange(criado, semana.start, semana.end)) semana.novosLeads.push(it);
+        if (inRange(qual, semana.start, semana.end)) semana.qualificadosLeads.push(it);
+        if (inRange(fech, semana.start, semana.end)) semana.fechadosLeads.push(it);
       }
     }
-    return list;
+    return list.map((s) => ({
+      ...s,
+      novos: s.novosLeads.length,
+      qualificados: s.qualificadosLeads.length,
+      fechados: s.fechadosLeads.length,
+    }));
   }, [items, semanaInicio]);
 
   const maxValor = Math.max(1, ...semanas.flatMap((s) => [s.novos, s.qualificados, s.fechados]));
@@ -275,33 +301,91 @@ export default function Gerencial({ items, usersById }) {
       </div>
 
       <div className="metrics-grid">
-        <div className="metric-card">
+        <div
+          className={`metric-card${kpis.novosHojeLeads.length ? ' card-clickable' : ''}`}
+          onClick={kpis.novosHojeLeads.length ? () => openDrill('Novos leads hoje', kpis.novosHojeLeads) : undefined}
+          title={kpis.novosHojeLeads.length ? 'Ver os leads' : undefined}
+        >
           <div className="metric-label">Novos leads hoje</div>
-          <div className="metric-value">{kpis.novosHoje}</div>
-          <div className="metric-sub">{kpis.novos7d} nos últimos 7 dias</div>
+          <div className="metric-value">{kpis.novosHojeLeads.length}</div>
+          <div
+            className={kpis.novos7dLeads.length ? 'metric-sub card-clickable' : 'metric-sub'}
+            style={{ display: 'inline-block' }}
+            onClick={
+              kpis.novos7dLeads.length
+                ? (e) => {
+                    e.stopPropagation();
+                    openDrill('Novos leads nos últimos 7 dias', kpis.novos7dLeads);
+                  }
+                : undefined
+            }
+          >
+            {kpis.novos7dLeads.length} nos últimos 7 dias
+          </div>
         </div>
-        <div className="metric-card">
+        <div
+          className={`metric-card${kpis.qualHojeLeads.length ? ' card-clickable' : ''}`}
+          onClick={kpis.qualHojeLeads.length ? () => openDrill('Qualificados hoje', kpis.qualHojeLeads) : undefined}
+          title={kpis.qualHojeLeads.length ? 'Ver os leads' : undefined}
+        >
           <div className="metric-label">Qualificados hoje</div>
-          <div className="metric-value">{kpis.qualHoje}</div>
-          <div className="metric-sub">{kpis.qual7d} nos últimos 7 dias</div>
+          <div className="metric-value">{kpis.qualHojeLeads.length}</div>
+          <div
+            className={kpis.qual7dLeads.length ? 'metric-sub card-clickable' : 'metric-sub'}
+            style={{ display: 'inline-block' }}
+            onClick={
+              kpis.qual7dLeads.length
+                ? (e) => {
+                    e.stopPropagation();
+                    openDrill('Qualificados nos últimos 7 dias', kpis.qual7dLeads);
+                  }
+                : undefined
+            }
+          >
+            {kpis.qual7dLeads.length} nos últimos 7 dias
+          </div>
         </div>
-        <div className="metric-card">
+        <div
+          className={`metric-card${kpis.qual7dLeads.length ? ' card-clickable' : ''}`}
+          onClick={
+            kpis.qual7dLeads.length
+              ? () =>
+                  openDrillSections(
+                    'Taxa de qualificação (7 dias)',
+                    [
+                      { label: 'Novos leads (denominador)', leads: kpis.novos7dLeads },
+                      { label: 'Qualificados (numerador)', leads: kpis.qual7dLeads },
+                    ],
+                    'Qualificados ÷ novos leads, últimos 7 dias.'
+                  )
+              : undefined
+          }
+          title={kpis.qual7dLeads.length ? 'Ver os leads' : undefined}
+        >
           <div className="metric-label">Taxa de qualificação (7 dias)</div>
           <div className="metric-value">{taxaQualificacao7d === null ? '—' : `${taxaQualificacao7d.toFixed(0)}%`}</div>
           <div className="metric-sub">Qualificados ÷ novos leads, últimos 7 dias</div>
         </div>
-        <div className="metric-card">
+        <div
+          className={`metric-card${kpis.fechHojeLeads.length ? ' card-clickable' : ''}`}
+          onClick={kpis.fechHojeLeads.length ? () => openDrill('Fechados hoje', kpis.fechHojeLeads) : undefined}
+          title={kpis.fechHojeLeads.length ? 'Ver os leads' : undefined}
+        >
           <div className="metric-label">Fechados hoje</div>
-          <div className="metric-value">{kpis.fechHoje}</div>
+          <div className="metric-value">{kpis.fechHojeLeads.length}</div>
           <div className="metric-sub">
             {kpis.fechHojeValor
               ? kpis.fechHojeValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
               : 'sem valor estimado'}
           </div>
         </div>
-        <div className="metric-card">
+        <div
+          className={`metric-card${kpis.perdHojeLeads.length ? ' card-clickable' : ''}`}
+          onClick={kpis.perdHojeLeads.length ? () => openDrill('Perdidos hoje', kpis.perdHojeLeads) : undefined}
+          title={kpis.perdHojeLeads.length ? 'Ver os leads' : undefined}
+        >
           <div className="metric-label">Perdidos hoje</div>
-          <div className="metric-value">{kpis.perdHoje}</div>
+          <div className="metric-value">{kpis.perdHojeLeads.length}</div>
         </div>
       </div>
 
@@ -359,11 +443,21 @@ export default function Gerencial({ items, usersById }) {
                     fill="transparent"
                     tabIndex={0}
                     role="button"
-                    aria-label={`Semana de ${fmtShort(s.start)}: ${s.novos} novos leads, ${s.qualificados} qualificados, ${s.fechados} fechados`}
+                    aria-label={`Semana de ${fmtShort(s.start)}: ${s.novos} novos leads, ${s.qualificados} qualificados, ${s.fechados} fechados. Clique para ver os leads.`}
                     onMouseEnter={() => setHoverIdx(i)}
                     onMouseLeave={() => setHoverIdx((cur) => (cur === i ? null : cur))}
                     onFocus={() => setHoverIdx(i)}
                     onBlur={() => setHoverIdx((cur) => (cur === i ? null : cur))}
+                    onClick={() =>
+                      openDrillSections(
+                        `Semana de ${fmtShort(s.start)} a ${fmtShort(addDays(s.end, -1))}`,
+                        [
+                          { label: 'Novos leads', leads: s.novosLeads },
+                          { label: 'Qualificados', leads: s.qualificadosLeads },
+                          { label: 'Fechados', leads: s.fechadosLeads },
+                        ]
+                      )
+                    }
                     style={{ cursor: 'pointer' }}
                   />
                   {isHover && (
@@ -436,7 +530,18 @@ export default function Gerencial({ items, usersById }) {
           </thead>
           <tbody>
             {semanas.map((s, i) => (
-              <tr key={i}>
+              <tr
+                key={i}
+                className="row-clickable"
+                onClick={() =>
+                  openDrillSections(`Semana de ${fmtShort(s.start)} a ${fmtShort(addDays(s.end, -1))}`, [
+                    { label: 'Novos leads', leads: s.novosLeads },
+                    { label: 'Qualificados', leads: s.qualificadosLeads },
+                    { label: 'Fechados', leads: s.fechadosLeads },
+                  ])
+                }
+                title="Ver os leads"
+              >
                 <td>
                   {fmtShort(s.start)} – {fmtShort(addDays(s.end, -1))}
                 </td>
@@ -467,17 +572,32 @@ export default function Gerencial({ items, usersById }) {
             </tr>
           </thead>
           <tbody>
-            {porVendedor.map((r) => (
-              <tr key={r.id}>
-                <td>{r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`}</td>
-                <td>{r.total}</td>
-                <td>
-                  {r.noPrazoPct != null ? `${r.noPrazoPct.toFixed(0)}% (n=${r.comContato})` : '— (sem dado ainda)'}
-                </td>
-                <td>{r.mediaContato != null ? `${r.mediaContato.toFixed(1)} dia(s)` : '—'}</td>
-                <td>{r.conversaoPct != null ? `${r.conversaoPct.toFixed(0)}% (n=${r.resolvidos})` : '—'}</td>
-              </tr>
-            ))}
+            {porVendedor.map((r) => {
+              const nome = r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`;
+              return (
+                <tr
+                  key={r.id}
+                  className="row-clickable"
+                  onClick={() =>
+                    openDrill(
+                      `Leads de ${nome}`,
+                      items.filter((it) =>
+                        r.id === 'sem-responsavel' ? it.responsavelIds.length === 0 : it.responsavelIds.includes(r.id)
+                      )
+                    )
+                  }
+                  title="Ver os leads"
+                >
+                  <td>{nome}</td>
+                  <td>{r.total}</td>
+                  <td>
+                    {r.noPrazoPct != null ? `${r.noPrazoPct.toFixed(0)}% (n=${r.comContato})` : '— (sem dado ainda)'}
+                  </td>
+                  <td>{r.mediaContato != null ? `${r.mediaContato.toFixed(1)} dia(s)` : '—'}</td>
+                  <td>{r.conversaoPct != null ? `${r.conversaoPct.toFixed(0)}% (n=${r.resolvidos})` : '—'}</td>
+                </tr>
+              );
+            })}
             {porVendedor.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ color: 'var(--ink-soft)' }}>
@@ -641,15 +761,32 @@ export default function Gerencial({ items, usersById }) {
             </tr>
           </thead>
           <tbody>
-            {cargaPosVenda.map((r) => (
-              <tr key={r.id}>
-                <td>{r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`}</td>
-                <td>{r.carteira}</td>
-                <td>{r.ativo}</td>
-                <td>{r.posVenda}</td>
-                <td>{r.pctPosVenda != null ? `${r.pctPosVenda.toFixed(0)}%` : '—'}</td>
-              </tr>
-            ))}
+            {cargaPosVenda.map((r) => {
+              const nome = r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`;
+              return (
+                <tr
+                  key={r.id}
+                  className="row-clickable"
+                  onClick={() =>
+                    openDrill(
+                      `Carteira de ${nome}`,
+                      items.filter((it) => {
+                        const meu = r.id === 'sem-responsavel' ? it.responsavelIds.length === 0 : it.responsavelIds.includes(r.id);
+                        return meu && it.estagio !== 'Perdido';
+                      }),
+                      'Fechados (pós-venda) + leads em prospecção — perdidos ficam fora, como no cálculo da tabela.'
+                    )
+                  }
+                  title="Ver a carteira"
+                >
+                  <td>{nome}</td>
+                  <td>{r.carteira}</td>
+                  <td>{r.ativo}</td>
+                  <td>{r.posVenda}</td>
+                  <td>{r.pctPosVenda != null ? `${r.pctPosVenda.toFixed(0)}%` : '—'}</td>
+                </tr>
+              );
+            })}
             {cargaPosVenda.length === 0 && (
               <tr>
                 <td colSpan={5} style={{ color: 'var(--ink-soft)' }}>
@@ -660,6 +797,17 @@ export default function Gerencial({ items, usersById }) {
           </tbody>
         </table>
       </div>
+
+      {drillDown && (
+        <LeadListModal
+          title={drillDown.title}
+          subtitle={drillDown.subtitle}
+          sections={drillDown.sections}
+          usersById={usersById}
+          onSelectLead={handleSelectLead}
+          onClose={() => setDrillDown(null)}
+        />
+      )}
     </div>
   );
 }

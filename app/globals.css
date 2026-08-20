@@ -201,6 +201,16 @@ a { color: var(--accent); }
 .metrics-table td { padding: 8px; border-bottom: 1px solid var(--line); }
 .metrics-table tr:last-child td { border-bottom: none; }
 
+/* Linhas/cartões que abrem a lista de leads por trás do número (drill-down) —
+   mesmo princípio visual em toda a aba Métricas e no Gerencial: cursor de
+   clique + destaque sutil no hover, sem exigir uma coluna "Ação" extra. */
+.metrics-table tr.row-clickable { cursor: pointer; }
+.metrics-table tr.row-clickable:hover td { background: var(--bg); }
+.metric-card.card-clickable { cursor: pointer; transition: box-shadow 0.15s ease, border-color 0.15s ease; }
+.metric-card.card-clickable:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.funnel-row.row-clickable { cursor: pointer; border-radius: 6px; }
+.funnel-row.row-clickable:hover { background: var(--bg); }
+
 /* ---------- Agenda ---------- */
 .agenda-view { display: flex; flex-direction: column; gap: 16px; }
 .agenda-section.agenda-danger .agenda-section-header { color: var(--danger); }
