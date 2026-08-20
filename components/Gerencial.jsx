@@ -227,6 +227,43 @@ export default function Gerencial({ items, usersById }) {
       .sort((a, b) => b.total - a.total);
   }, [items]);
 
+  // ---------- Fase 9 — carga de pós-venda por vendedor ----------
+  // O roadmap original pedia "carga do vendedor SECUNDÁRIO" especificamente,
+  // mas o CRM não guarda essa distinção de forma estruturada: o handoff de
+  // entrega (ver HandoffModal/LeadDrawer) só ADICIONA o secundário à mesma
+  // coluna de responsáveis do principal — quem é "principal" e quem é
+  // "secundário" fica só registrado em texto livre numa anotação, não dá pra
+  // consultar de forma confiável. Por isso, a métrica que dá pra construir
+  // com o dado que existe é mais ampla: quanto da carteira de CADA
+  // responsável (principal ou secundário, sem diferenciar) é composta por
+  // clientes já fechados (pós-venda/manutenção) vs. leads ainda em
+  // prospecção (funil ativo). Isso já responde à pergunta de fundo — "o
+  // pós-venda está consumindo a agenda de alguém mais que deveria?" — mesmo
+  // sem isolar o secundário sozinho.
+  const cargaPosVenda = useMemo(() => {
+    const map = {};
+    function ensure(id) {
+      if (!map[id]) map[id] = { id, posVenda: 0, ativo: 0, perdido: 0 };
+      return map[id];
+    }
+    for (const it of items) {
+      const ids = it.responsavelIds && it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
+      for (const id of ids) {
+        const row = ensure(id);
+        if (it.estagio === 'Fechado') row.posVenda += 1;
+        else if (it.estagio === 'Perdido') row.perdido += 1;
+        else row.ativo += 1;
+      }
+    }
+    return Object.values(map)
+      .map((r) => {
+        const carteira = r.posVenda + r.ativo; // perdidos ficam fora — não consomem agenda
+        return { ...r, carteira, pctPosVenda: carteira ? (r.posVenda / carteira) * 100 : null };
+      })
+      .filter((r) => r.carteira > 0)
+      .sort((a, b) => (b.pctPosVenda ?? -1) - (a.pctPosVenda ?? -1));
+  }, [items]);
+
   return (
     <div className="metrics-view">
       <div className="banner banner-info" style={{ borderRadius: 8, marginBottom: 16 }}>
@@ -582,6 +619,46 @@ export default function Gerencial({ items, usersById }) {
             </div>
           </>
         )}
+      </div>
+
+      <div className="metrics-section">
+        <h3>Carga de pós-venda por vendedor (Fase 9)</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          O CRM não distingue estruturalmente "vendedor principal" de "vendedor secundário" depois do handoff de
+          entrega — os dois ficam como responsáveis do mesmo lead. Por isso esta tabela mostra a carteira de cada
+          responsável (some quem participou, sem separar quem vendeu originalmente de quem recebeu a entrega): que
+          fração dela já é cliente fechado (manutenção/pós-venda) vs. ainda em prospecção (funil ativo). Leads
+          perdidos ficam fora da conta — não consomem agenda de manutenção nem de prospecção.
+        </p>
+        <table className="metrics-table">
+          <thead>
+            <tr>
+              <th>Vendedor</th>
+              <th>Carteira ativa</th>
+              <th>Em prospecção</th>
+              <th>Pós-venda (fechados)</th>
+              <th>% da carteira em pós-venda</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cargaPosVenda.map((r) => (
+              <tr key={r.id}>
+                <td>{r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`}</td>
+                <td>{r.carteira}</td>
+                <td>{r.ativo}</td>
+                <td>{r.posVenda}</td>
+                <td>{r.pctPosVenda != null ? `${r.pctPosVenda.toFixed(0)}%` : '—'}</td>
+              </tr>
+            ))}
+            {cargaPosVenda.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ color: 'var(--ink-soft)' }}>
+                  Sem dados no filtro atual.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
