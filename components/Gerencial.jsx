@@ -1,6 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+
+function formatMoney(v) {
+  const n = Number(v);
+  if (!v || Number.isNaN(n)) return 'R$ 0';
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+}
 
 // Dashboard Gerencial — visível só para administradores (ver Dashboard.jsx,
 // que só mostra a aba e renderiza este componente quando currentUser.admin).
@@ -59,6 +65,35 @@ function inRange(d, start, end) {
 
 export default function Gerencial({ items, usersById }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+
+  // ---------- Fase 8 — Vendas × Produção (Parte A: painel agregado) ----------
+  // Lê os boards PEDIDOS/PRODUÇÃO da fábrica via /api/producao (admin-only,
+  // mesma regra desta aba inteira). Não tem relação com "items" (leads do
+  // CRM) — ainda não existe vínculo lead↔pedido (isso é a Parte B, não
+  // implementada), então este bloco é 100% independente do resto da tela.
+  const [producao, setProducao] = useState(null);
+  const [producaoLoading, setProducaoLoading] = useState(true);
+  const [producaoError, setProducaoError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/producao')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.error) throw new Error(data.error);
+        setProducao(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setProducaoError(err.message || 'Não foi possível carregar os dados de produção.');
+      })
+      .finally(() => {
+        if (!cancelled) setProducaoLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const hoje = useMemo(() => {
     const d = new Date();
@@ -415,6 +450,138 @@ export default function Gerencial({ items, usersById }) {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="metrics-section">
+        <h3>Vendas × Produção (Fase 8)</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          Lê direto os boards PEDIDOS e PRODUÇÃO da fábrica — sistemas próprios do PCP, mantidos fora do CRM. Ainda
+          não existe vínculo entre um lead do CRM e um Pedido específico, então esta visão é agregada (números do
+          negócio como um todo), não por lead individual.
+        </p>
+
+        {producaoLoading && <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>Carregando...</div>}
+        {producaoError && <div className="banner banner-error" style={{ borderRadius: 8 }}>{producaoError}</div>}
+
+        {producao && (
+          <>
+            <div className="metrics-grid" style={{ marginBottom: 20 }}>
+              <div className="metric-card">
+                <div className="metric-label">Pedidos em aberto</div>
+                <div className="metric-value">{producao.pedidos.totalAberto}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Pedidos atrasados</div>
+                <div className="metric-value">{producao.pedidos.atrasados}</div>
+                <div className="metric-sub">
+                  {producao.pedidos.totalAberto > 0
+                    ? `${((producao.pedidos.atrasados / producao.pedidos.totalAberto) * 100).toFixed(0)}% dos em aberto`
+                    : ''}
+                </div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Valor total em aberto</div>
+                <div className="metric-value">{formatMoney(producao.pedidos.valorTotalAberto)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">Valor a receber</div>
+                <div className="metric-value">{formatMoney(producao.pedidos.valorAReceber)}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">OPs em produção</div>
+                <div className="metric-value">{producao.producao.totalAberto}</div>
+              </div>
+              <div className="metric-card">
+                <div className="metric-label">OPs com prazo estourado</div>
+                <div className="metric-value">{producao.producao.atrasadas}</div>
+              </div>
+            </div>
+
+            <div className="metrics-columns">
+              <div className="metrics-section">
+                <h3>Pedidos em aberto por tipo</h3>
+                <table className="metrics-table">
+                  <thead>
+                    <tr>
+                      <th>Tipo</th>
+                      <th>Qtd</th>
+                      <th>Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {producao.pedidos.porTipo.map((t) => (
+                      <tr key={t.tipo}>
+                        <td>{t.tipo}</td>
+                        <td>{t.qtd}</td>
+                        <td>{formatMoney(t.valor)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="metrics-section">
+                <h3>OPs em produção por etapa</h3>
+                <div className="funnel">
+                  {producao.producao.porEstagio.map((e) => {
+                    const max = Math.max(1, ...producao.producao.porEstagio.map((x) => x.qtd));
+                    return (
+                      <div className="funnel-row" key={e.titulo}>
+                        <div className="funnel-label" title={e.titulo}>
+                          {e.titulo}
+                        </div>
+                        <div className="funnel-bar-track">
+                          <div
+                            className="funnel-bar"
+                            style={{ width: `${(e.qtd / max) * 100}%`, background: '#2a78d6' }}
+                          />
+                        </div>
+                        <div className="funnel-count">{e.qtd}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <h3 style={{ fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--ink-soft)' }}>
+                Pedidos mais atrasados
+              </h3>
+              <table className="metrics-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Pedido</th>
+                    <th>Tipo</th>
+                    <th>Prazo</th>
+                    <th>Dias de atraso</th>
+                    <th>Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {producao.pedidos.listaAtrasados.map((p) => (
+                    <tr key={p.id}>
+                      <td>{p.cliente}</td>
+                      <td>{p.numeroPedido || '—'}</td>
+                      <td>{p.tipo}</td>
+                      <td>{p.prazoEntrega || '—'}</td>
+                      <td>{p.diasAtraso != null ? p.diasAtraso : '—'}</td>
+                      <td>{formatMoney(p.total)}</td>
+                    </tr>
+                  ))}
+                  {producao.pedidos.listaAtrasados.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ color: 'var(--ink-soft)' }}>
+                        Nenhum pedido atrasado. 🎉
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
