@@ -146,8 +146,8 @@ export default function Dashboard() {
     <div className="app-shell">
       <div className="topbar">
         <div className="brand">
-          <span className="dot" />
-          🏭 CRM Agostini — Funil de Vendas
+          <img className="brand-logo" src="/logo.png" alt="Agostini" />
+          CRM Agostini — Funil de Vendas
         </div>
         <div className="actions">
           <div className="view-toggle">

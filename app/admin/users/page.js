@@ -244,8 +244,8 @@ export default function AdminUsersPage() {
     <div className="app-shell">
       <div className="topbar">
         <div className="brand">
-          <span className="dot" />
-          🏭 CRM Agostini — Gerenciar usuários
+          <img className="brand-logo" src="/logo.png" alt="Agostini" />
+          CRM Agostini — Gerenciar usuários
         </div>
         <div className="actions">
           <button className="btn btn-secondary" onClick={() => router.push('/')}>

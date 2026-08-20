@@ -5,12 +5,28 @@ export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
 };
 
-const PUBLIC_PATHS = ['/login', '/api/auth/login', '/api/auth/context', '/api/auth/bootstrap'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/login',
+  '/api/auth/context',
+  '/api/auth/bootstrap',
+  '/logo.png',
+  '/icon.png',
+];
 
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PATHS.some((p) => pathname === p)) {
+    return NextResponse.next();
+  }
+
+  // Ícones e manifest.xml do suplemento do Word (pasta public/word-addin) —
+  // são buscados direto pelo próprio Word/Office (sem cookie de sessão
+  // nenhum), então precisam ficar acessíveis sem login. Sem isso, o Word
+  // não conseguia nem exibir o ícone do suplemento na faixa de opções (a
+  // busca do ícone caía no redirect pra /login e falhava silenciosamente).
+  if (pathname.startsWith('/word-addin/')) {
     return NextResponse.next();
   }
 

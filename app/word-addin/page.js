@@ -234,6 +234,7 @@ export default function WordAddinPage() {
   return (
     <div style={styles.page}>
       <header style={styles.header}>
+        <img src="/logo.png" alt="Agostini" style={styles.brandLogo} />
         <strong style={styles.brand}>CRM Agostini</strong>
         <span style={styles.subBrand}>Suplemento do Word</span>
         {userName && <span style={styles.userChip}>{userName}</span>}
@@ -350,13 +351,14 @@ const styles = {
   },
   header: {
     display: 'flex',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: 8,
     borderBottom: '2px solid #0B5D42',
     paddingBottom: 8,
     marginBottom: 12,
     flexWrap: 'wrap',
   },
+  brandLogo: { width: 20, height: 20, flexShrink: 0 },
   brand: { color: '#0B5D42', fontSize: 15 },
   subBrand: { color: '#56636f', fontSize: 12 },
   userChip: {

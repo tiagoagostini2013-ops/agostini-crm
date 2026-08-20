@@ -85,7 +85,7 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-32.png" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-16.png" />
         <bt:Image id="Icon.32x32" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-32.png" />
         <bt:Image id="Icon.80x80" DefaultValue="https://PAINEL_URL_AQUI/word-addin/icon-80.png" />
       </bt:Images>

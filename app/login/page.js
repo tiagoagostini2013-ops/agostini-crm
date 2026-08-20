@@ -39,7 +39,10 @@ function BootstrapForm({ onDone }) {
 
   return (
     <form className="login-card" onSubmit={handleSubmit}>
-      <h1>🏭 CRM Agostini</h1>
+      <h1>
+        <img className="brand-logo" src="/logo.png" alt="Agostini" />
+        CRM Agostini
+      </h1>
       <p>
         Primeira vez por aqui — ainda não existe nenhum usuário cadastrado. Crie a conta do
         administrador (ela poderá cadastrar todo mundo depois).
@@ -99,7 +102,10 @@ function LoginForm({ users }) {
 
   return (
     <form className="login-card" onSubmit={handleSubmit}>
-      <h1>🏭 CRM Agostini</h1>
+      <h1>
+        <img className="brand-logo" src="/logo.png" alt="Agostini" />
+        CRM Agostini
+      </h1>
       <p>Escolha seu nome e digite sua senha.</p>
       {error && <div className="error">{error}</div>}
       <select value={name} onChange={(e) => setName(e.target.value)} style={{ marginBottom: 12 }}>
@@ -148,7 +154,10 @@ function LoginPageInner() {
     return (
       <div className="login-wrap">
         <div className="login-card">
-          <h1>🏭 CRM Agostini</h1>
+          <h1>
+        <img className="brand-logo" src="/logo.png" alt="Agostini" />
+        CRM Agostini
+      </h1>
           <div className="error">{error}</div>
         </div>
       </div>
@@ -165,7 +174,10 @@ function LoginPageInner() {
         <BootstrapForm onDone={() => (window.location.href = '/')} />
       ) : context.users.length === 0 ? (
         <div className="login-card">
-          <h1>🏭 CRM Agostini</h1>
+          <h1>
+        <img className="brand-logo" src="/logo.png" alt="Agostini" />
+        CRM Agostini
+      </h1>
           <p>Nenhum usuário ativo no momento. Peça para um administrador reativar seu acesso.</p>
         </div>
       ) : (
