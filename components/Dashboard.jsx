@@ -271,7 +271,7 @@ export default function Dashboard() {
 
       {meta && items && view === 'gerencial' && currentUser?.admin && (
         <div className="metrics-scroll">
-          <Gerencial items={filteredItems} />
+          <Gerencial items={filteredItems} usersById={usersById} />
         </div>
       )}
 

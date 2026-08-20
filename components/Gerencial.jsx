@@ -57,7 +57,7 @@ function inRange(d, start, end) {
   return d && d >= start && d < end;
 }
 
-export default function Gerencial({ items }) {
+export default function Gerencial({ items, usersById }) {
   const [hoverIdx, setHoverIdx] = useState(null);
 
   const hoje = useMemo(() => {
@@ -144,6 +144,53 @@ export default function Gerencial({ items }) {
   }
 
   const hovered = hoverIdx !== null ? semanas[hoverIdx] : null;
+
+  // ---------- Fase 7 — desempenho por vendedor ----------
+  // Comparação entre pessoas: decidido com o Tiago em 20/08/2026 que isso
+  // fica só aqui (admin-only), diferente das métricas pessoais/agregadas da
+  // aba Métricas, que qualquer vendedor já acessa. Um lead conta pra TODOS
+  // os responsáveis vinculados a ele (o CRM permite mais de um — ex: depois
+  // do handoff de entrega o vendedor secundário é adicionado sem remover o
+  // principal), então o total de "leads" aqui pode ser levemente maior que o
+  // total real de leads distintos.
+  const porVendedor = useMemo(() => {
+    const map = {};
+    function ensure(id) {
+      if (!map[id]) map[id] = { id, total: 0, contatoDiffs: [], noPrazo: 0, comContato: 0, fechados: 0, resolvidos: 0 };
+      return map[id];
+    }
+    for (const it of items) {
+      const ids = it.responsavelIds && it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
+      for (const id of ids) {
+        const row = ensure(id);
+        row.total += 1;
+        const criado = toDateOnly(it.createdAt);
+        const contato = toDateOnly(it.dataPrimeiroContato);
+        if (criado && contato) {
+          const d = (contato - criado) / (1000 * 60 * 60 * 24);
+          if (d >= 0) {
+            row.contatoDiffs.push(d);
+            row.comContato += 1;
+            if (d <= 1) row.noPrazo += 1;
+          }
+        }
+        if (it.estagio === 'Fechado' || it.estagio === 'Perdido') {
+          row.resolvidos += 1;
+          if (it.estagio === 'Fechado') row.fechados += 1;
+        }
+      }
+    }
+    return Object.values(map)
+      .map((r) => ({
+        ...r,
+        mediaContato: r.contatoDiffs.length
+          ? r.contatoDiffs.reduce((a, b) => a + b, 0) / r.contatoDiffs.length
+          : null,
+        noPrazoPct: r.comContato ? (r.noPrazo / r.comContato) * 100 : null,
+        conversaoPct: r.resolvidos ? (r.fechados / r.resolvidos) * 100 : null,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [items]);
 
   return (
     <div className="metrics-view">
@@ -326,6 +373,46 @@ export default function Gerencial({ items }) {
                 <td>{s.fechados}</td>
               </tr>
             ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="metrics-section">
+        <h3>Desempenho por vendedor (Fase 7)</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          "Contato no prazo" considera o mesmo dia ou o dia seguinte à criação do lead — as colunas de data do CRM não
+          guardam hora, então não dá pra medir as 24h do SLA com mais precisão que isso. Confiável a partir de
+          20/08/2026. Um lead pode contar para mais de um vendedor (ex: depois do handoff de entrega).
+        </p>
+        <table className="metrics-table">
+          <thead>
+            <tr>
+              <th>Vendedor</th>
+              <th>Leads</th>
+              <th>Contato no prazo</th>
+              <th>Tempo médio até 1º contato</th>
+              <th>Conversão (entre resolvidos)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {porVendedor.map((r) => (
+              <tr key={r.id}>
+                <td>{r.id === 'sem-responsavel' ? 'Sem responsável' : usersById?.[r.id]?.name || `#${r.id}`}</td>
+                <td>{r.total}</td>
+                <td>
+                  {r.noPrazoPct != null ? `${r.noPrazoPct.toFixed(0)}% (n=${r.comContato})` : '— (sem dado ainda)'}
+                </td>
+                <td>{r.mediaContato != null ? `${r.mediaContato.toFixed(1)} dia(s)` : '—'}</td>
+                <td>{r.conversaoPct != null ? `${r.conversaoPct.toFixed(0)}% (n=${r.resolvidos})` : '—'}</td>
+              </tr>
+            ))}
+            {porVendedor.length === 0 && (
+              <tr>
+                <td colSpan={5} style={{ color: 'var(--ink-soft)' }}>
+                  Sem dados no filtro atual.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
