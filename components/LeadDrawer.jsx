@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MONDAY_ACCOUNT_URL, BOARD_ID_PUBLIC } from '../lib/publicConfig';
 import { uploadWithRetry } from '../lib/blobUpload';
 import ProposalViewerModal from './ProposalViewerModal';
+import HandoffModal from './HandoffModal';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -36,6 +37,9 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [fileError, setFileError] = useState('');
   const fileInputRef = useRef(null);
   const cancelUploadControllerRef = useRef(null);
+  const [pendingCloseChanges, setPendingCloseChanges] = useState(null); // mudanças pendentes até confirmar o handoff
+  const [handoffSaving, setHandoffSaving] = useState(false);
+  const [handoffError, setHandoffError] = useState('');
 
   useEffect(() => {
     setForm({ ...item });
@@ -73,9 +77,13 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
     return changed;
   }
 
-  async function save(extra) {
+  // Devolve true/false pra quem chamou saber se salvou de verdade — o fluxo
+  // de handoff obrigatório (ver handleConfirmHandoff) só deve registrar a
+  // anotação de entrega depois de confirmar que a troca de responsável e o
+  // estágio "Fechado" foram salvos com sucesso no monday.com.
+  async function save(extra, opts) {
     const changed = { ...diff(), ...(extra || {}) };
-    if (Object.keys(changed).length === 0) return;
+    if (Object.keys(changed).length === 0) return true;
     setSaving(true);
     setError('');
     try {
@@ -87,8 +95,10 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar.');
       onSaved(item.id, { ...form, ...extra });
+      return true;
     } catch (err) {
       setError(err.message);
+      return opts?.returnErrorMessage ? err.message : false;
     } finally {
       setSaving(false);
     }
@@ -209,6 +219,86 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
     update('responsavelIds', Array.from(set));
   }
 
+  const contatos = form.contatos || [];
+
+  function updateContato(index, key, value) {
+    const next = contatos.map((c, i) => (i === index ? { ...c, [key]: value } : c));
+    update('contatos', next);
+  }
+
+  function addContato() {
+    update('contatos', [...contatos, { name: '', role: '', phone: '' }]);
+  }
+
+  function removeContato(index) {
+    update('contatos', contatos.filter((_, i) => i !== index));
+  }
+
+  // Intercepta o clique de "Salvar alterações": se a mudança envolve virar o
+  // lead para "Fechado", não salva direto — abre o handoff obrigatório (ver
+  // Processo Comercial - Fábrica de Vendas: toda entrega exige adicionar o
+  // vendedor secundário como responsável + registrar o contexto da venda).
+  function handleSaveClick() {
+    const changed = diff();
+    if (changed.estagio === 'Fechado' && item.estagio !== 'Fechado') {
+      setHandoffError('');
+      setPendingCloseChanges(changed);
+      return;
+    }
+    save();
+  }
+
+  async function handleConfirmHandoff({ secondaryId, note }) {
+    setHandoffError('');
+    setHandoffSaving(true);
+    try {
+      const mergedIds = Array.from(new Set([...responsavelIds, String(secondaryId)]));
+      const result = await save({ ...pendingCloseChanges, responsavelIds: mergedIds }, { returnErrorMessage: true });
+      if (result !== true) {
+        // refletimos o erro no próprio modal, pra não obrigar a pessoa a
+        // fechar o modal só pra ver o motivo da falha.
+        setHandoffError(result || 'Não foi possível salvar. Tente novamente.');
+        return;
+      }
+
+      const secondaryUser = (meta.users || []).find((u) => String(u.id) === String(secondaryId));
+      const authorName = currentUser?.name || 'Vendedor';
+      const noteBody = `🤝 Handoff de entrega registrado por ${authorName}. Vendedor secundário: ${
+        secondaryUser?.name || secondaryId
+      }. Contexto: ${note}`;
+
+      try {
+        const res = await fetch(`/api/items/${item.id}/notes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: noteBody }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          setNotes((prev) => [
+            { id: `tmp-${Date.now()}`, text: noteBody, author: authorName, createdAt: new Date().toISOString() },
+            ...(prev || []),
+          ]);
+        }
+      } catch {
+        // A entrega já foi salva com sucesso — se só a anotação falhar, não
+        // travamos o fluxo por isso (mesma lógica de addNote/handleFileSelected).
+      }
+
+      setPendingCloseChanges(null);
+    } finally {
+      setHandoffSaving(false);
+    }
+  }
+
+  function handleCancelHandoff() {
+    // Desfaz a escolha de "Fechado" no formulário — sem o handoff confirmado,
+    // o estágio não muda.
+    update('estagio', item.estagio);
+    setPendingCloseChanges(null);
+    setHandoffError('');
+  }
+
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
@@ -262,6 +352,47 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           >
             Abrir no monday.com ↗
           </a>
+        </div>
+
+        <div className="drawer-section">
+          <h3>Contatos e papéis de decisão</h3>
+          {contatos.length === 0 && (
+            <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
+              Nenhum contato cadastrado. Registre quem aprova orçamento, quem exige especificação técnica etc.
+            </div>
+          )}
+          {contatos.map((c, i) => (
+            <div key={i} className="field-row" style={{ alignItems: 'flex-end', marginBottom: 8 }}>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Nome</label>
+                <input value={c.name || ''} onChange={(e) => updateContato(i, 'name', e.target.value)} />
+              </div>
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Papel na decisão</label>
+                <input
+                  value={c.role || ''}
+                  placeholder="Ex: aprova orçamento, exige spec técnica..."
+                  onChange={(e) => updateContato(i, 'role', e.target.value)}
+                />
+              </div>
+              <div className="field" style={{ marginBottom: 0, maxWidth: 130 }}>
+                <label>Telefone</label>
+                <input value={c.phone || ''} onChange={(e) => updateContato(i, 'phone', e.target.value)} />
+              </div>
+              <button
+                type="button"
+                className="proposta-delete-btn"
+                title="Remover contato"
+                style={{ marginBottom: 0 }}
+                onClick={() => removeContato(i)}
+              >
+                🗑️
+              </button>
+            </div>
+          ))}
+          <button type="button" className="btn btn-secondary" onClick={addContato}>
+            + Adicionar contato
+          </button>
         </div>
 
         <div className="drawer-section">
@@ -473,7 +604,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
             </div>
           </div>
 
-          <button className="btn btn-primary" disabled={!isDirty || saving} onClick={() => save()}>
+          <button className="btn btn-primary" disabled={!isDirty || saving} onClick={handleSaveClick}>
             {saving ? 'Salvando...' : 'Salvar alterações'}
           </button>
         </div>
@@ -519,6 +650,18 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
           proposal={viewingProposal}
           fallbackUrl={`${MONDAY_ACCOUNT_URL}/boards/${BOARD_ID_PUBLIC}/pulses/${item.id}`}
           onClose={() => setViewingProposal(null)}
+        />
+      )}
+
+      {pendingCloseChanges && (
+        <HandoffModal
+          item={item}
+          meta={meta}
+          currentResponsavelIds={responsavelIds}
+          saving={handoffSaving}
+          error={handoffError}
+          onConfirm={handleConfirmHandoff}
+          onCancel={handleCancelHandoff}
         />
       )}
     </>

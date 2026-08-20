@@ -7,6 +7,7 @@ import LeadDrawer from './LeadDrawer';
 import NewLeadModal from './NewLeadModal';
 import Metrics from './Metrics';
 import Agenda, { computeAgenda } from './Agenda';
+import PosVenda from './PosVenda';
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -159,6 +160,9 @@ export default function Dashboard() {
             <button className={view === 'metrics' ? 'active' : ''} onClick={() => setView('metrics')}>
               Métricas
             </button>
+            <button className={view === 'posvenda' ? 'active' : ''} onClick={() => setView('posvenda')}>
+              Pós-venda
+            </button>
           </div>
           <button className="btn btn-primary" onClick={() => setShowNewLead(true)}>
             + Novo lead
@@ -250,6 +254,12 @@ export default function Dashboard() {
       {meta && items && view === 'agenda' && (
         <div className="metrics-scroll">
           <Agenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
+        </div>
+      )}
+
+      {meta && items && view === 'posvenda' && (
+        <div className="metrics-scroll">
+          <PosVenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
         </div>
       )}
 
