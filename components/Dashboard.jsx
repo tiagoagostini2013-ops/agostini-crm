@@ -9,7 +9,7 @@ import Metrics from './Metrics';
 import Agenda, { computeAgenda } from './Agenda';
 import PosVenda from './PosVenda';
 import Gerencial from './Gerencial';
-import { statusLeituraProposta, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
+import { ultimoEnvio, statusLeituraRegistro, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -332,14 +332,25 @@ export default function Dashboard() {
                                     </span>
                                   )}
                                   {(() => {
-                                    const statusLeitura = statusLeituraProposta(item.rastreioPropostas);
-                                    if (!statusLeitura) return null;
+                                    const ultimo = ultimoEnvio(item.rastreioPropostas);
+                                    if (!ultimo) return null;
+                                    const statusLeitura = statusLeituraRegistro(ultimo);
                                     return (
-                                      <span
-                                        className="proposta-status-dot"
-                                        title={STATUS_LEITURA_LABEL[statusLeitura]}
-                                        style={{ background: STATUS_LEITURA_COR[statusLeitura] }}
-                                      />
+                                      <span className="proposta-status-group">
+                                        <span
+                                          className="proposta-status-dot"
+                                          title={STATUS_LEITURA_LABEL[statusLeitura]}
+                                          style={{ background: STATUS_LEITURA_COR[statusLeitura] }}
+                                        />
+                                        {ultimo.downloadCount > 0 && (
+                                          <span
+                                            className="proposta-download-icon"
+                                            title={`Baixada ${ultimo.downloadCount}x pelo botão da página`}
+                                          >
+                                            ⬇
+                                          </span>
+                                        )}
+                                      </span>
                                     );
                                   })()}
                                 </div>
