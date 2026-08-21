@@ -5,6 +5,7 @@ import { MONDAY_ACCOUNT_URL, BOARD_ID_PUBLIC } from '../lib/publicConfig';
 import { uploadWithRetry } from '../lib/blobUpload';
 import ProposalViewerModal from './ProposalViewerModal';
 import HandoffModal from './HandoffModal';
+import { statusLeituraRegistro, STATUS_LEITURA, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -492,7 +493,9 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
             "Visualizada" só conta quando o link é aberto de verdade num navegador — colar num grupo/conversa do
             WhatsApp não conta, só o clique do cliente. Ainda assim é uma estimativa, não uma confirmação de leitura
             atenta: o tempo somado só conta enquanto a aba fica em primeiro plano, e reabrir o mesmo link soma no
-            mesmo registro.
+            mesmo registro. 🔴 não visualizada · 🟠 visualizada com pouco tempo de leitura (menos de 4min) · ✅
+            leitura completa (4min ou mais) — a mesma cor aparece no card do lead no Kanban, referente ao envio mais
+            recente.
           </p>
           {rastreioPropostas.length === 0 ? (
             <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
@@ -521,13 +524,18 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
                       </td>
                       <td>{fmtDate(r.sentAt)}</td>
                       <td>
-                        {r.firstViewedAt ? (
-                          <span style={{ color: 'var(--good)' }}>
-                            ✅ Visualizada em {fmtDate(r.firstViewedAt)} ({r.viewCount}x)
-                          </span>
-                        ) : (
-                          <span style={{ color: 'var(--ink-soft)' }}>Ainda não visualizada</span>
-                        )}
+                        {(() => {
+                          const status = statusLeituraRegistro(r);
+                          if (status === STATUS_LEITURA.NAO_LIDA) {
+                            return <span style={{ color: STATUS_LEITURA_COR[status] }}>🔴 Ainda não visualizada</span>;
+                          }
+                          const icone = status === STATUS_LEITURA.LIDA_BASTANTE ? '✅' : '🟠';
+                          return (
+                            <span style={{ color: STATUS_LEITURA_COR[status] }}>
+                              {icone} Visualizada em {fmtDate(r.firstViewedAt)} ({r.viewCount}x)
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>{fmtDuration(r.totalViewMs)}</td>
                       <td>

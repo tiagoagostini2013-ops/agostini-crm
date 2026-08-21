@@ -9,6 +9,7 @@ import Metrics from './Metrics';
 import Agenda, { computeAgenda } from './Agenda';
 import PosVenda from './PosVenda';
 import Gerencial from './Gerencial';
+import { statusLeituraProposta, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -181,6 +182,9 @@ export default function Dashboard() {
           <a href={`https://agostini-team.monday.com/boards/18404435549`} target="_blank" rel="noreferrer" className="logout">
             Ver no monday.com ↗
           </a>
+          <a href="/ferramentas" className="logout">
+            Ferramentas ↗
+          </a>
           <button className="btn btn-secondary" onClick={loadAll} disabled={loading}>
             {loading ? 'Atualizando...' : '↻ Atualizar'}
           </button>
@@ -327,6 +331,17 @@ export default function Dashboard() {
                                       📄 {item.propostas.length}
                                     </span>
                                   )}
+                                  {(() => {
+                                    const statusLeitura = statusLeituraProposta(item.rastreioPropostas);
+                                    if (!statusLeitura) return null;
+                                    return (
+                                      <span
+                                        className="proposta-status-dot"
+                                        title={STATUS_LEITURA_LABEL[statusLeitura]}
+                                        style={{ background: STATUS_LEITURA_COR[statusLeitura] }}
+                                      />
+                                    );
+                                  })()}
                                 </div>
                                 <div className="footer-row">
                                   <span>

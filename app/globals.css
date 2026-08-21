@@ -443,3 +443,37 @@ a { color: var(--accent); }
 }
 .login-card button { width: 100%; }
 .login-card .error { color: var(--danger); font-size: 0.82rem; margin-bottom: 10px; }
+
+/* ---------- Ferramentas (hub interno) ---------- */
+.ferramentas-page { max-width: 920px; margin: 0 auto; padding: 32px 20px 60px; }
+.ferramentas-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.ferramentas-brand { display: flex; align-items: center; gap: 10px; }
+.ferramentas-brand h1 { font-size: 1.4rem; margin: 0; }
+.ferramentas-intro { color: var(--ink-soft); font-size: 0.9rem; margin: 0 0 24px; }
+.ferramentas-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px;
+}
+.ferramenta-card {
+  display: block; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 18px; text-decoration: none; color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.ferramenta-card:hover { border-color: var(--accent); box-shadow: 0 4px 14px rgba(0,0,0,0.08); }
+.ferramenta-nome { font-weight: 700; font-size: 1.02rem; margin-bottom: 6px; }
+.ferramenta-desc { color: var(--ink-soft); font-size: 0.84rem; line-height: 1.4; margin-bottom: 14px; }
+.ferramenta-badge {
+  display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+}
+.ferramenta-badge.badge-internet { background: rgba(0,200,117,0.12); color: var(--good); }
+.ferramenta-badge.badge-rede-local { background: rgba(255,203,0,0.16); color: #8a6d00; }
+
+/* ---------- Indicador de leitura de proposta (card do Kanban) ---------- */
+.proposta-status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.08);
+}
