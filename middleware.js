@@ -41,11 +41,13 @@ export async function middleware(request) {
   // Rastreio de leitura de propostas (20/08/2026): quem abre /p/[token] é o
   // CLIENTE, do lado de fora, sem login nenhum no painel — a validação de
   // acesso é o próprio token assinado (ver app/p/[token]/page.js), não o
-  // cookie de sessão. O mesmo vale pras duas rotas de API que essa página
-  // usa: servir o PDF e receber os pings de "abriu"/"tempo de tela".
+  // cookie de sessão. O mesmo vale pras rotas de API que essa página usa:
+  // servir o PDF (inline e como download) e receber os pings de
+  // "abriu"/"tempo de tela".
   if (
     pathname.startsWith('/p/') ||
     pathname.startsWith('/api/proposal-track-file/') ||
+    pathname.startsWith('/api/proposal-download-file/') ||
     pathname.startsWith('/api/track/')
   ) {
     return NextResponse.next();

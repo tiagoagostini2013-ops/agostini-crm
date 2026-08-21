@@ -495,7 +495,8 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
             atenta: o tempo somado só conta enquanto a aba fica em primeiro plano, e reabrir o mesmo link soma no
             mesmo registro. 🔴 não visualizada · 🟠 visualizada com pouco tempo de leitura (menos de 4min) · ✅
             leitura completa (4min ou mais) — a mesma cor aparece no card do lead no Kanban, referente ao envio mais
-            recente.
+            recente. "Baixada" conta cliques no botão "⬇ Baixar PDF" da própria página — não cobre quem salva pelo
+            visualizador nativo do navegador, isso não gera nenhum aviso pra gente.
           </p>
           {rastreioPropostas.length === 0 ? (
             <div style={{ color: 'var(--ink-soft)', fontSize: '0.85rem' }}>
@@ -536,6 +537,11 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
                             </span>
                           );
                         })()}
+                        {r.downloadCount > 0 && (
+                          <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem', marginTop: 2 }}>
+                            ⬇ Baixada {r.downloadCount}x pelo botão da página (última em {fmtDate(r.lastDownloadedAt)})
+                          </div>
+                        )}
                       </td>
                       <td>{fmtDuration(r.totalViewMs)}</td>
                       <td>

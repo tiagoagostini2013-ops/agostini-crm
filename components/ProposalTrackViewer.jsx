@@ -87,23 +87,27 @@ export default function ProposalTrackViewer({ token, fileName }) {
   }, [token]);
 
   const fileUrl = `/api/proposal-track-file/${token}`;
+  const downloadUrl = `/api/proposal-download-file/${token}`;
 
   return (
     <div style={styles.page}>
       <header style={styles.header}>
-        <img src="/logo.png" alt="Agostini" style={styles.logo} />
-        <span style={styles.title}>{fileName || 'Proposta comercial'}</span>
+        <div style={styles.headerLeft}>
+          <img src="/logo.png" alt="Agostini" style={styles.logo} />
+          <span style={styles.title}>{fileName || 'Proposta comercial'}</span>
+        </div>
+        <div style={styles.headerActions}>
+          <a href={fileUrl} target="_blank" rel="noreferrer" style={styles.linkSecondary}>
+            Abrir em nova aba
+          </a>
+          <a href={downloadUrl} style={styles.downloadBtn}>
+            ⬇ Baixar PDF
+          </a>
+        </div>
       </header>
       <div style={styles.viewerWrap}>
         <embed src={fileUrl} type="application/pdf" style={styles.embed} />
       </div>
-      <p style={styles.fallback}>
-        Não conseguiu ver o documento acima?{' '}
-        <a href={fileUrl} target="_blank" rel="noreferrer" style={styles.link}>
-          Toque aqui para abrir o PDF
-        </a>
-        .
-      </p>
     </div>
   );
 }
@@ -111,23 +115,44 @@ export default function ProposalTrackViewer({ token, fileName }) {
 const styles = {
   page: {
     fontFamily: '-apple-system, Segoe UI, Roboto, sans-serif',
-    minHeight: '100vh',
+    height: '100dvh',
     display: 'flex',
     flexDirection: 'column',
     background: '#f4f6f8',
+    overflow: 'hidden',
   },
   header: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
-    padding: '12px 16px',
+    flex: '0 0 auto',
+    padding: '10px 16px',
     background: '#fff',
     borderBottom: '1px solid #e1e6ea',
   },
-  logo: { width: 28, height: 28 },
-  title: { fontWeight: 600, color: '#16212c', fontSize: 15 },
-  viewerWrap: { flex: 1, minHeight: '70vh', padding: 12 },
-  embed: { width: '100%', height: '100%', minHeight: '70vh', border: 'none', borderRadius: 8, background: '#fff' },
-  fallback: { textAlign: 'center', fontSize: 13, color: '#56636f', padding: '0 16px 20px' },
-  link: { color: '#007eb5', fontWeight: 600 },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 },
+  headerActions: { display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 },
+  logo: { width: 26, height: 26, flexShrink: 0 },
+  title: {
+    fontWeight: 600,
+    color: '#16212c',
+    fontSize: 14,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  linkSecondary: { color: '#56636f', fontSize: 13, textDecoration: 'none' },
+  downloadBtn: {
+    color: '#fff',
+    background: '#007eb5',
+    fontSize: 13,
+    fontWeight: 600,
+    padding: '7px 14px',
+    borderRadius: 6,
+    textDecoration: 'none',
+    whiteSpace: 'nowrap',
+  },
+  viewerWrap: { flex: '1 1 auto', minHeight: 0, padding: 0 },
+  embed: { width: '100%', height: '100%', border: 'none', display: 'block', background: '#fff' },
 };
