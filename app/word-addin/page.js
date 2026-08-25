@@ -18,6 +18,28 @@ async function parseJsonResponse(res) {
   }
 }
 
+// Pega o nome real do arquivo .docx aberto no Word, via
+// Office.context.document.url (o caminho/URL local ou do OneDrive/SharePoint
+// onde o documento foi salvo). Peça do Tiago em 21/08/2026: antes o nome
+// vinha fixo como "Proposta - {nome do lead}.docx", que não batia com o
+// título que o vendedor de fato dá ao arquivo. Se o documento nunca foi
+// salvo (Office.context.document.url vem vazio nesse caso) ou o host do
+// Office não expõe essa API, cai no nome alternativo informado.
+function getDocumentFileName(fallback) {
+  try {
+    const rawUrl = window.Office?.context?.document?.url || '';
+    if (rawUrl) {
+      const lastSegment = rawUrl.split(/[\\/]/).pop() || '';
+      const decoded = decodeURIComponent(lastSegment);
+      const base = decoded.replace(/\.[^./\\]+$/, '');
+      if (base) return `${base}.docx`;
+    }
+  } catch {
+    // Segue pro fallback.
+  }
+  return fallback;
+}
+
 const FIELD_LABELS = [
   { key: 'name', label: 'Nome do contato' },
   { key: 'empresa', label: 'Empresa' },
@@ -185,7 +207,7 @@ export default function WordAddinPage() {
       }
 
       const fileBlob = await getDocumentAsBlob();
-      const fileName = `Proposta - ${selected.name || 'Cliente'}.docx`;
+      const fileName = getDocumentFileName(`Proposta - ${selected.name || 'Cliente'}.docx`);
       const fileSizeMb = fileBlob.size / (1024 * 1024);
 
       // Sobe o arquivo direto pro Vercel Blob (bypassa nosso backend) — uma

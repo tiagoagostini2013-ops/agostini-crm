@@ -83,7 +83,7 @@ export async function POST(request) {
         const pdfName = safeName.replace(/\.docx$/i, '') + '.pdf';
         await uploadFileToItem(itemId, COLUMNS.propostas, pdfBuffer, pdfName, PDF_MIME);
 
-        const newAssetId = await findNewFileAssetId(itemId, COLUMNS.propostas, existingIds);
+        const newAssetId = await findNewFileAssetId(itemId, COLUMNS.propostas, existingIds, pdfName);
         if (!newAssetId) {
           throw new Error('PDF anexado, mas não foi possível identificar o arquivo novo pra gerar o link de rastreio.');
         }
