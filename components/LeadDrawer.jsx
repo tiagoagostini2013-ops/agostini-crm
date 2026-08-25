@@ -41,6 +41,8 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
   const [notes, setNotes] = useState(null);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
+  const [showFollowUpNudge, setShowFollowUpNudge] = useState(false);
+  const [settingFollowUp, setSettingFollowUp] = useState(false);
   const [viewingProposal, setViewingProposal] = useState(null);
   const [arquivos, setArquivos] = useState(item.propostas || []);
   const [uploadingFile, setUploadingFile] = useState(null); // { name, status } | null
@@ -160,10 +162,45 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
         ...(prev || []),
       ]);
       setNoteText('');
+
+      // Escrever uma anotação carimba "Data Último Contato" automaticamente
+      // no servidor (ver app/api/items/[id]/notes/route.js) — sincroniza
+      // aqui pro card já refletir sem precisar recarregar a página.
+      if (data.ultimoContato) {
+        update('ultimoContato', data.ultimoContato);
+        onSaved(item.id, { ultimoContato: data.ultimoContato });
+      }
+
+      // "Próximo follow-up" continua exigindo uma decisão do vendedor, então
+      // não é automático — mas se estiver vazio ou já vencido, oferece um
+      // atalho de 1 clique bem na hora em que ele acabou de registrar o
+      // contato (pedido do Tiago em 21/08/2026).
+      const hojeStr = new Date().toISOString().slice(0, 10);
+      const followUpAtual = form.proximoFollowUp ? isoDateOnly(form.proximoFollowUp) : '';
+      if (!followUpAtual || followUpAtual < hojeStr) {
+        setShowFollowUpNudge(true);
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setAddingNote(false);
+    }
+  }
+
+  // Reaproveita save() (mesma função usada pelo resto do formulário) em vez
+  // de duplicar a chamada de PATCH — herda de graça o tratamento de erro e o
+  // estado de "salvando" já testados no resto do drawer.
+  async function quickSetFollowUp(days) {
+    setSettingFollowUp(true);
+    try {
+      const dataFollowUp = new Date();
+      dataFollowUp.setDate(dataFollowUp.getDate() + days);
+      const proximoFollowUp = dataFollowUp.toISOString().slice(0, 10);
+      update('proximoFollowUp', proximoFollowUp);
+      const ok = await save({ proximoFollowUp });
+      if (ok) setShowFollowUpNudge(false);
+    } finally {
+      setSettingFollowUp(false);
     }
   }
 
@@ -735,6 +772,33 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
               {addingNote ? 'Salvando...' : 'Adicionar anotação'}
             </button>
           </div>
+
+          {showFollowUpNudge && (
+            <div className="followup-nudge">
+              <span>
+                ✅ "Último contato" atualizado pra hoje. Já sabe quando volta a falar com o cliente?
+              </span>
+              <div className="followup-nudge-actions">
+                <button className="btn-link" disabled={settingFollowUp} onClick={() => quickSetFollowUp(3)}>
+                  +3 dias
+                </button>
+                <button className="btn-link" disabled={settingFollowUp} onClick={() => quickSetFollowUp(7)}>
+                  +7 dias
+                </button>
+                <button className="btn-link" disabled={settingFollowUp} onClick={() => quickSetFollowUp(15)}>
+                  +15 dias
+                </button>
+                <button
+                  className="btn-link"
+                  style={{ color: 'var(--ink-soft)' }}
+                  disabled={settingFollowUp}
+                  onClick={() => setShowFollowUpNudge(false)}
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="notes-list">
             {notes === null && <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>Carregando...</div>}

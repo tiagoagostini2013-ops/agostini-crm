@@ -484,3 +484,16 @@ a { color: var(--accent); }
   color: var(--accent);
   flex-shrink: 0;
 }
+
+/* ---------- Atalho de follow-up após anotação (LeadDrawer) ---------- */
+.followup-nudge {
+  background: rgba(0,126,181,0.08);
+  border: 1px solid rgba(0,126,181,0.25);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  margin: 4px 0 12px;
+  font-size: 0.82rem;
+  color: var(--ink);
+}
+.followup-nudge-actions { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
+.followup-nudge-actions .btn-link { font-size: 0.82rem; font-weight: 600; }
