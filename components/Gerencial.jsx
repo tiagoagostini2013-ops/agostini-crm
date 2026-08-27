@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import LeadListModal from './LeadListModal';
+import { STAGES } from '../lib/config';
 
 function formatMoney(v) {
   const n = Number(v);
@@ -64,7 +65,7 @@ function inRange(d, start, end) {
   return d && d >= start && d < end;
 }
 
-export default function Gerencial({ items, usersById, onSelect }) {
+export default function Gerencial({ items, usersById, onSelect, hasActiveFilter, onClearFilters }) {
   const [hoverIdx, setHoverIdx] = useState(null);
 
   // ---------- Drill-down: clicar num número mostra os leads por trás dele ----------
@@ -159,6 +160,26 @@ export default function Gerencial({ items, usersById, onSelect }) {
   }, [items, hoje, seteDiasAtras]);
 
   const taxaQualificacao7d = kpis.novos7dLeads.length > 0 ? (kpis.qual7dLeads.length / kpis.novos7dLeads.length) * 100 : null;
+
+  // ---------- Funil agora (contagem ao vivo por estágio) ----------
+  // Pedido do Tiago em 27/08/2026: os KPIs/evolução semanal acima só contam
+  // uma transição de estágio quando ela carimba dataQualificacao/
+  // dataFechamento/dataPerda (ver STAGE_DATE_COLUMNS) — e isso só acontece
+  // quando a mudança é feita pelo Kanban/drawer do próprio CRM (ver PATCH em
+  // app/api/items/[id]/route.js). Mudanças feitas direto no quadro do
+  // monday.com (confirmado como o fluxo mais comum do time) nunca carimbam
+  // essa data, então ficam invisíveis pros números acima mesmo aparecendo
+  // certinho no monday. Esta contagem aqui usa só o campo "estagio" atual de
+  // cada lead — o mesmo valor que está no quadro do monday agora — então bate
+  // com o monday sempre, independente de como o estágio foi mudado.
+  const stageCounts = useMemo(() => {
+    const map = {};
+    STAGES.forEach((s) => (map[s.value] = []));
+    for (const it of items) {
+      if (it.estagio && map[it.estagio]) map[it.estagio].push(it);
+    }
+    return map;
+  }, [items]);
 
   // ---------- Evolução semanal (últimas 8 semanas, seg-dom) ----------
   const semanas = useMemo(() => {
@@ -292,12 +313,53 @@ export default function Gerencial({ items, usersById, onSelect }) {
 
   return (
     <div className="metrics-view">
+      {hasActiveFilter && (
+        <div className="banner banner-warning banner-dismissible" style={{ borderRadius: 8, marginBottom: 16 }}>
+          <span>
+            ⚠ Filtro ativo no topo da tela (responsável/segmento/canal/busca): todos os números desta página —
+            inclusive Qualificados, Fechados e Perdidos — estão contando só os leads que passam nesse filtro, não o
+            funil inteiro.
+          </span>
+          {onClearFilters && (
+            <button className="btn-link" onClick={onClearFilters} style={{ flexShrink: 0 }}>
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="banner banner-info" style={{ borderRadius: 8, marginBottom: 16 }}>
         Painel visível só para administradores. "Novos leads" reflete a data de criação real de cada lead (sempre
-        precisa). Já "Qualificados", "Fechados" e "Perdidos" passaram a ser registrados automaticamente em
-        20/08/2026 — antes disso, o monday.com não guardava essa data, então reconstruímos o que deu pelo log de
-        atividades (cobertura parcial, mais completa a partir de meados de abril de 2026). Semanas mais antigas
-        podem aparecer artificialmente baixas nessas duas séries.
+        precisa). Já "Qualificados", "Fechados" e "Perdidos" (nos KPIs e na evolução semanal abaixo) só contam
+        transições feitas pelo Kanban/drawer do próprio CRM — mudanças de estágio feitas direto no quadro do
+        monday.com não carimbam essa data e por isso não entram nesses números. Essas colunas de data também só
+        existem a partir de 20/08/2026, com reconstrução parcial via log de atividades do monday.com (mais completa
+        a partir de meados de abril de 2026) — semanas mais antigas podem aparecer artificialmente baixas. Pra um
+        número que bate com o monday.com sempre, use o "Funil agora" logo abaixo.
+      </div>
+
+      <div className="metrics-section">
+        <h3>Funil agora (contagem ao vivo por estágio)</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          Conta o estágio atual de cada lead — o mesmo campo que aparece no quadro do monday.com —, então bate com o
+          monday mesmo quando o estágio foi mudado direto lá, sem passar pelo CRM.
+        </p>
+        <div className="metrics-grid">
+          {STAGES.map((s) => {
+            const leads = stageCounts[s.value] || [];
+            return (
+              <div
+                key={s.value}
+                className={`metric-card${leads.length ? ' card-clickable' : ''}`}
+                onClick={leads.length ? () => openDrill(`${s.value} agora`, leads) : undefined}
+                title={leads.length ? 'Ver os leads' : undefined}
+              >
+                <div className="metric-label">{s.value}</div>
+                <div className="metric-value">{leads.length}</div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="metrics-grid">

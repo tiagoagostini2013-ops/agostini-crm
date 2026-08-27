@@ -290,7 +290,13 @@ export default function Dashboard() {
 
       {meta && items && view === 'gerencial' && currentUser?.admin && (
         <div className="metrics-scroll">
-          <Gerencial items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
+          <Gerencial
+            items={filteredItems}
+            usersById={usersById}
+            onSelect={setSelectedId}
+            hasActiveFilter={Boolean(filters.responsavel || filters.segmento || filters.canal || filters.search)}
+            onClearFilters={() => setFilters({ responsavel: '', segmento: '', canal: '', search: '' })}
+          />
         </div>
       )}
 
