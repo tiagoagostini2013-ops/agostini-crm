@@ -25,6 +25,70 @@ function daysSince(dateStr) {
   return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+function dateOnly(value) {
+  if (!value) return null;
+  return String(value).slice(0, 10);
+}
+
+function todayStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function fmtDatePt(dateStr) {
+  const d = dateOnly(dateStr);
+  if (!d) return '';
+  const [, m, day] = d.split('-');
+  return `${day}/${m}`;
+}
+
+// Selo de follow-up mostrado no rodapé do card — dá pra "ver" o mesmo
+// critério usado em comparePriority, então a ordem dos cards na coluna faz
+// sentido visualmente (quem tem selo vermelho/atrasado no topo, depois quem
+// tem follow-up mais próximo, por último quem não tem nada marcado).
+function followUpInfo(item) {
+  const today = todayStr();
+  const fu = dateOnly(item.proximoFollowUp);
+  if (fu) {
+    if (fu < today) return { text: `⚠ follow-up atrasado ${daysSince(item.proximoFollowUp)}d`, className: 'stale' };
+    if (fu === today) return { text: '📅 follow-up hoje', className: 'due-today' };
+    return { text: `📅 follow-up em ${fmtDatePt(fu)}`, className: 'due-future' };
+  }
+  const dias = daysSince(item.ultimoContato);
+  if (dias === null) return { text: '⚠ sem contato e sem follow-up marcado', className: 'stale' };
+  if (dias > 5) return { text: `⚠ ${dias} dias sem contato, sem follow-up marcado`, className: 'stale' };
+  // Contato recente mas sem follow-up agendado — não é urgente feito os
+  // casos acima, mas merece um lembrete visual (pedido do Tiago em
+  // 27/08/2026) numa cor diferente do vermelho de "atrasado/negligenciado",
+  // pro vendedor lembrar de marcar a próxima data antes que vire atraso.
+  return { text: '🔔 marcar follow-up', className: 'no-followup' };
+}
+
+// Ordena os cards de cada etapa por prioridade de atendimento, não por data
+// de criação (pedido do Tiago em 27/08/2026 — um CRM deve mostrar primeiro
+// quem precisa de atenção agora). Regra: quem tem follow-up mais atrasado
+// vem primeiro; sem atraso, quem tem o follow-up mais próximo vem primeiro
+// (as duas comparações são a mesma ordenação cronológica ascendente — uma
+// data no passado já "vence" uma no futuro nessa ordem, então não precisa de
+// lógica separada pra atrasado vs. não atrasado). Quem não tem follow-up
+// marcado fica por último, ordenado por quem está há mais tempo sem contato
+// — mesmo critério já usado no grupo "sem follow-up agendado" da Agenda.
+function comparePriority(a, b) {
+  const fuA = dateOnly(a.proximoFollowUp);
+  const fuB = dateOnly(b.proximoFollowUp);
+  if (fuA && fuB) return fuA.localeCompare(fuB);
+  if (fuA && !fuB) return -1;
+  if (!fuA && fuB) return 1;
+  const diasA = daysSince(a.ultimoContato);
+  const diasB = daysSince(b.ultimoContato);
+  const va = diasA === null ? Infinity : diasA;
+  const vb = diasB === null ? Infinity : diasB;
+  return vb - va;
+}
+
 function formatMoney(v) {
   const n = Number(v);
   if (!v || Number.isNaN(n)) return null;
@@ -127,6 +191,7 @@ export default function Dashboard() {
       if (it.estagio && map[it.estagio]) map[it.estagio].push(it);
       else outros.push(it);
     }
+    Object.values(map).forEach((arr) => arr.sort(comparePriority));
     return { map, outros };
   }, [filteredItems, meta]);
 
@@ -416,13 +481,15 @@ export default function Dashboard() {
                                     <span className="valor">{formatMoney(item.valorEstimado)}</span>
                                   )}
                                 </div>
-                                {daysSince(item.ultimoContato) !== null && daysSince(item.ultimoContato) > 5 && (
-                                  <div className="footer-row" style={{ marginTop: 4 }}>
-                                    <span className="stale">
-                                      ⚠ {daysSince(item.ultimoContato)} dias sem contato
-                                    </span>
-                                  </div>
-                                )}
+                                {(() => {
+                                  const info = followUpInfo(item);
+                                  if (!info) return null;
+                                  return (
+                                    <div className="footer-row" style={{ marginTop: 4 }}>
+                                      <span className={info.className}>{info.text}</span>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
                           </Draggable>

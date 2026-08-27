@@ -159,6 +159,9 @@ a { color: var(--accent); }
 .lead-card .footer-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; color: var(--ink-soft); }
 .lead-card .valor { font-weight: 700; color: var(--ink); }
 .lead-card .stale { color: var(--danger); font-weight: 600; }
+.lead-card .due-today { color: #b8720a; font-weight: 600; }
+.lead-card .due-future { color: var(--ink-soft); }
+.lead-card .no-followup { color: #6a4fb3; font-weight: 600; }
 
 .empty-col { padding: 20px 8px; text-align: center; color: var(--ink-soft); font-size: 0.82rem; }
 
