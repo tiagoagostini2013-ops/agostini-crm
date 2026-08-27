@@ -71,7 +71,7 @@ a { color: var(--accent); }
   align-items: center;
   flex-shrink: 0;
 }
-.filters select, .filters input[type="text"] {
+.filters select, .filters input[type="text"], .filters input[type="date"] {
   padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -79,6 +79,7 @@ a { color: var(--accent); }
   color: var(--ink);
   min-width: 150px;
 }
+.filters input[type="date"] { min-width: 140px; }
 .filters .search { min-width: 220px; }
 .filters .count { margin-left: auto; font-size: 0.82rem; color: var(--ink-soft); }
 .filters .clear-btn {

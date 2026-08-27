@@ -10,6 +10,13 @@ import Agenda, { computeAgenda } from './Agenda';
 import PosVenda from './PosVenda';
 import Gerencial from './Gerencial';
 import { ultimoEnvio, statusLeituraRegistro, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
+import { DATE_FIELDS } from '../lib/config';
+
+// Filtros padrão da barra superior — pedido do Tiago em 27/08/2026: filtro de
+// período por data de conferência, com o campo de data escolhido na hora
+// (criação, qualificação, proposta, negociação, fechamento ou perda), usado
+// pra bater números com o monday.com num intervalo específico.
+const DEFAULT_FILTERS = { responsavel: '', segmento: '', canal: '', search: '', dataCampo: 'createdAt', dataInicio: '', dataFim: '' };
 
 function daysSince(dateStr) {
   if (!dateStr) return null;
@@ -31,7 +38,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(null);
-  const [filters, setFilters] = useState({ responsavel: '', segmento: '', canal: '', search: '' });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [view, setView] = useState('kanban');
   const [showNewLead, setShowNewLead] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -93,6 +100,17 @@ export default function Dashboard() {
         const q = filters.search.toLowerCase();
         const haystack = `${it.name} ${it.empresa || ''} ${it.telefone || ''}`.toLowerCase();
         if (!haystack.includes(q)) return false;
+      }
+      if (filters.dataInicio || filters.dataFim) {
+        // Compara só "YYYY-MM-DD": createdAt vem em ISO completo do monday,
+        // as demais datas de estágio já vêm como texto "YYYY-MM-DD" — os 10
+        // primeiros caracteres bastam pros dois casos e a comparação de
+        // string funciona igual à cronológica nesse formato.
+        const raw = it[filters.dataCampo];
+        const val = raw ? String(raw).slice(0, 10) : null;
+        if (!val) return false;
+        if (filters.dataInicio && val < filters.dataInicio) return false;
+        if (filters.dataFim && val > filters.dataFim) return false;
       }
       return true;
     });
@@ -256,11 +274,36 @@ export default function Dashboard() {
             value={filters.search}
             onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
           />
-          {(filters.responsavel || filters.segmento || filters.canal || filters.search) && (
-            <button
-              className="clear-btn"
-              onClick={() => setFilters({ responsavel: '', segmento: '', canal: '', search: '' })}
-            >
+          <select
+            value={filters.dataCampo}
+            onChange={(e) => setFilters((f) => ({ ...f, dataCampo: e.target.value }))}
+            title="Campo de data usado no filtro de período abaixo"
+          >
+            {DATE_FIELDS.map((d) => (
+              <option key={d.value} value={d.value}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+          <input
+            type="date"
+            value={filters.dataInicio}
+            onChange={(e) => setFilters((f) => ({ ...f, dataInicio: e.target.value }))}
+            title="De (data inicial)"
+          />
+          <input
+            type="date"
+            value={filters.dataFim}
+            onChange={(e) => setFilters((f) => ({ ...f, dataFim: e.target.value }))}
+            title="Até (data final)"
+          />
+          {(filters.responsavel ||
+            filters.segmento ||
+            filters.canal ||
+            filters.search ||
+            filters.dataInicio ||
+            filters.dataFim) && (
+            <button className="clear-btn" onClick={() => setFilters(DEFAULT_FILTERS)}>
               Limpar filtros
             </button>
           )}
@@ -294,8 +337,10 @@ export default function Dashboard() {
             items={filteredItems}
             usersById={usersById}
             onSelect={setSelectedId}
-            hasActiveFilter={Boolean(filters.responsavel || filters.segmento || filters.canal || filters.search)}
-            onClearFilters={() => setFilters({ responsavel: '', segmento: '', canal: '', search: '' })}
+            hasActiveFilter={Boolean(
+              filters.responsavel || filters.segmento || filters.canal || filters.search || filters.dataInicio || filters.dataFim
+            )}
+            onClearFilters={() => setFilters(DEFAULT_FILTERS)}
           />
         </div>
       )}
