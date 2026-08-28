@@ -8,7 +8,7 @@ const CHART_PAD_TOP = 16;
 const BAR_W = 34;
 const GROUP_GAP = 14;
 const MAX_GROUP_GAP = 40; // limite pra não esticar demais o espaçamento com poucas semanas salvas
-const TOOLTIP_HALF_W = 110; // largura aproximada do tooltip ÷ 2, pra não deixar ele vazar pra fora do gráfico
+const TOOLTIP_HALF_W = 115; // ~metade da largura máxima do tooltip (200px + padding), pra não deixar ele vazar pra fora da tela
 
 // Mantém o tooltip dentro da área do gráfico mesmo perto das bordas (poucas
 // semanas = gráfico estreito) — sem isso, centralizar sempre na barra faz o
@@ -308,9 +308,14 @@ export default function PainelVendas() {
 
             {/* overflow-x: auto — a lista de semanas só cresce, então em vez de
                 espremer as barras conforme o histórico aumenta, o gráfico
-                mantém a largura de barra e passa a rolar horizontalmente. */}
-            <div style={{ overflowX: 'auto' }} ref={chartWrapRef}>
-            <div style={{ position: 'relative', width: evolucaoChartW }}>
+                mantém a largura de barra e passa a rolar horizontalmente.
+                O tooltip fica neste nível (não no div estreito do gráfico) e
+                usa a largura REAL do container (chartContainerW) pra se
+                posicionar — com poucas semanas o gráfico é bem mais estreito
+                que a tela, e centralizar o tooltip só dentro dele o jogava
+                pra fora da tela em telas estreitas/celular. */}
+            <div style={{ overflowX: 'auto', position: 'relative' }} ref={chartWrapRef}>
+            <div style={{ width: evolucaoChartW }}>
               <svg
                 viewBox={`0 0 ${evolucaoChartW} ${CHART_H + 26}`}
                 width={evolucaoChartW}
@@ -397,29 +402,32 @@ export default function PainelVendas() {
                   );
                 })}
               </svg>
-
-              {hoveredSemana && (
-                <div
-                  className="gerencial-tooltip"
-                  style={{
-                    left: `${(clampTooltipLeftPx(evolucaoGap + hoverIdx * (BAR_W + evolucaoGap) + BAR_W / 2, evolucaoChartW) / evolucaoChartW) * 100}%`,
-                  }}
-                >
-                  <div className="gerencial-tooltip-title">
-                    Semana de {fmtDatePt(hoveredSemana.inicioSemana)} a {fmtDatePt(hoveredSemana.fimSemana)}
-                  </div>
-                  {TEMPERATURAS_PAINEL_VENDAS.map((t) => (
-                    <div key={t}>
-                      <i style={{ background: TEMPERATURA_CORES[t] }} /> {t}:{' '}
-                      <strong>{fmtMoney(hoveredSemana.porStatus[t]) || 'R$ 0'}</strong>
-                    </div>
-                  ))}
-                  <div style={{ marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.25)', paddingTop: 4 }}>
-                    Total: <strong>{fmtMoney(hoveredSemana.total) || 'R$ 0'}</strong>
-                  </div>
-                </div>
-              )}
             </div>
+
+            {hoveredSemana && (
+              <div
+                className="gerencial-tooltip painel-vendas-evo-tooltip"
+                style={{
+                  left: clampTooltipLeftPx(
+                    evolucaoGap + hoverIdx * (BAR_W + evolucaoGap) + BAR_W / 2,
+                    chartContainerW || evolucaoChartW
+                  ),
+                }}
+              >
+                <div className="gerencial-tooltip-title">
+                  Semana de {fmtDatePt(hoveredSemana.inicioSemana)} a {fmtDatePt(hoveredSemana.fimSemana)}
+                </div>
+                {TEMPERATURAS_PAINEL_VENDAS.map((t) => (
+                  <div key={t}>
+                    <i style={{ background: TEMPERATURA_CORES[t] }} /> {t}:{' '}
+                    <strong>{fmtMoney(hoveredSemana.porStatus[t]) || 'R$ 0'}</strong>
+                  </div>
+                ))}
+                <div style={{ marginTop: 4, borderTop: '1px solid rgba(255,255,255,0.25)', paddingTop: 4 }}>
+                  Total: <strong>{fmtMoney(hoveredSemana.total) || 'R$ 0'}</strong>
+                </div>
+              </div>
+            )}
             </div>
           </>
         )}

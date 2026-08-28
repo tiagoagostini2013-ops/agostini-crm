@@ -487,6 +487,15 @@ a { color: var(--accent); }
 .gerencial-tooltip i {
   display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px;
 }
+/* Variante do tooltip pro gráfico de Evolução semanal do Painel de Vendas —
+   linhas mais longas ("Apalavreado: R$ 2.328.000"), então em vez de manter
+   tudo numa linha só (nowrap) e depender só de espaço lateral, deixa quebrar
+   e limita a largura — cabe até em telas de celular sem vazar da tela. */
+.painel-vendas-evo-tooltip {
+  white-space: normal;
+  width: max-content;
+  max-width: 200px;
+}
 
 /* ---------- Login page ---------- */
 .login-wrap {
