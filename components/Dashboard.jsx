@@ -9,6 +9,7 @@ import Metrics from './Metrics';
 import Agenda, { computeAgenda } from './Agenda';
 import PosVenda from './PosVenda';
 import Gerencial from './Gerencial';
+import PainelVendas from './PainelVendas';
 import { ultimoEnvio, statusLeituraRegistro, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 import { DATE_FIELDS } from '../lib/config';
 
@@ -258,6 +259,11 @@ export default function Dashboard() {
                 Gerencial
               </button>
             )}
+            {currentUser?.admin && (
+              <button className={view === 'painelVendas' ? 'active' : ''} onClick={() => setView('painelVendas')}>
+                Painel de Vendas
+              </button>
+            )}
           </div>
           <button className="btn btn-primary" onClick={() => setShowNewLead(true)}>
             + Novo lead
@@ -407,6 +413,12 @@ export default function Dashboard() {
             )}
             onClearFilters={() => setFilters(DEFAULT_FILTERS)}
           />
+        </div>
+      )}
+
+      {view === 'painelVendas' && currentUser?.admin && (
+        <div className="metrics-scroll">
+          <PainelVendas />
         </div>
       )}
 
