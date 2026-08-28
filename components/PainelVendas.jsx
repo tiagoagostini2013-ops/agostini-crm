@@ -119,6 +119,21 @@ export default function PainelVendas() {
     [form.negocios]
   );
 
+  // Agrupa os negócios já digitados acima por status (pedido do Tiago em
+  // 28/08/2026) — é só uma reorganização visual da mesma lista, não um dado
+  // separado: mudar a temperatura de um negócio no editor de cima já move ele
+  // pro grupo certo aqui embaixo automaticamente, sem nenhum passo extra.
+  const gruposPorStatus = useMemo(() => {
+    const map = {};
+    TEMPERATURAS_PAINEL_VENDAS.forEach((t) => (map[t] = []));
+    for (const n of form.negocios) {
+      if (!n.nome.trim() && !n.valor) continue; // ignora linha em branco
+      const t = TEMPERATURAS_PAINEL_VENDAS.includes(n.temperatura) ? n.temperatura : TEMPERATURAS_PAINEL_VENDAS[0];
+      map[t].push(n);
+    }
+    return map;
+  }, [form.negocios]);
+
   async function salvar() {
     if (!form.inicioSemana || !form.fimSemana) {
       setError('Preencha início e fim da semana antes de salvar.');
@@ -296,6 +311,26 @@ export default function PainelVendas() {
                 value={form.perdidas}
                 onChange={(e) => setForm((f) => ({ ...f, perdidas: e.target.value }))}
               />
+            </div>
+          </div>
+
+          <div className="metrics-section">
+            <h3>Negócios por status</h3>
+            <div className="painel-vendas-grupos">
+              {TEMPERATURAS_PAINEL_VENDAS.map((t) => (
+                <div className="painel-vendas-grupo" key={t}>
+                  <div className={`painel-vendas-grupo-header painel-vendas-status-${t.toLowerCase()}`}>
+                    {t} <span className="painel-vendas-grupo-count">{gruposPorStatus[t].length}</span>
+                  </div>
+                  {gruposPorStatus[t].length === 0 && <div className="painel-vendas-grupo-empty">—</div>}
+                  {gruposPorStatus[t].map((n, i) => (
+                    <div className="painel-vendas-grupo-item" key={i}>
+                      <span>{n.ok ? '✓ ' : ''}{n.nome || '(sem nome)'}</span>
+                      {fmtMoney(n.valor) && <span className="painel-vendas-grupo-valor">{fmtMoney(n.valor)}</span>}
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           </div>
 
