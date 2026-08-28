@@ -326,11 +326,11 @@ a { color: var(--accent); }
   display: flex; justify-content: space-between; align-items: center;
 }
 .painel-vendas-grupo-count { background: rgba(255,255,255,0.25); border-radius: 999px; padding: 0 7px; font-size: 0.72rem; }
-.painel-vendas-status-frio { background: #6b8fa3; }
-.painel-vendas-status-morno { background: #d99a3c; }
-.painel-vendas-status-quente { background: #d9534f; }
-.painel-vendas-status-apalavreado { background: #8a5fc4; }
-.painel-vendas-status-fechado { background: #2f9e5c; }
+.painel-vendas-status-frio { background: #2a78d6; }
+.painel-vendas-status-morno { background: #eda100; }
+.painel-vendas-status-quente { background: #e34948; }
+.painel-vendas-status-apalavreado { background: #4a3aa7; }
+.painel-vendas-status-fechado { background: #0ca30c; }
 .painel-vendas-grupo-item {
   padding: 7px 10px; font-size: 0.8rem; border-top: 1px solid var(--line);
   display: flex; justify-content: space-between; gap: 6px; background: var(--paper);
