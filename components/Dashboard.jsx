@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import LeadDrawer from './LeadDrawer';
 import NewLeadModal from './NewLeadModal';
+import CelebrationOverlay from './CelebrationOverlay';
 import Metrics from './Metrics';
 import Agenda, { computeAgenda } from './Agenda';
 import PosVenda from './PosVenda';
@@ -111,6 +112,14 @@ export default function Dashboard() {
   // TOC e TDAH, um banner fixo que não fecha é ruim pra ele), mas volta a
   // aparecer a cada atualização do CRM (loadAll), não só uma vez por sessão.
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  // Comemoração ao fechar negócio (pedido do Tiago em 31/08/2026) — `key`
+  // força remontar o overlay do zero (confete + som de novo) se dois
+  // fechamentos acontecerem em sequência rápida.
+  const [celebration, setCelebration] = useState(null);
+
+  function celebrarFechamento({ empresa, valorEstimado }) {
+    setCelebration({ empresa, valorEstimado, key: Date.now() });
+  }
 
   async function loadAll() {
     setLoading(true);
@@ -207,6 +216,7 @@ export default function Dashboard() {
 
     const newStage = destination.droppableId;
     const previousStage = source.droppableId;
+    const draggedItem = items.find((it) => it.id === draggableId);
     updateLocalItem(draggableId, { estagio: newStage });
 
     try {
@@ -218,6 +228,12 @@ export default function Dashboard() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Erro ao mover o lead.');
+      }
+      // Comemora só numa transição NOVA pra "Fechado" (arrastar de qualquer
+      // outra coluna) — não repete se o card já estava lá e foi só reordenado
+      // ou movido e trazido de volta.
+      if (newStage === 'Fechado' && previousStage !== 'Fechado' && draggedItem) {
+        celebrarFechamento({ empresa: draggedItem.empresa, valorEstimado: draggedItem.valorEstimado });
       }
     } catch (err) {
       updateLocalItem(draggableId, { estagio: previousStage });
@@ -527,6 +543,17 @@ export default function Dashboard() {
           currentUser={currentUser}
           onClose={() => setSelectedId(null)}
           onSaved={(id, patch) => updateLocalItem(id, patch)}
+          onClosedDeal={celebrarFechamento}
+        />
+      )}
+
+      {celebration && (
+        <CelebrationOverlay
+          key={celebration.key}
+          empresa={celebration.empresa}
+          valorEstimado={celebration.valorEstimado}
+          vendedorNome={currentUser?.name}
+          onClose={() => setCelebration(null)}
         />
       )}
 

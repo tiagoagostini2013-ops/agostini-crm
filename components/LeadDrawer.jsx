@@ -34,7 +34,7 @@ const QUALIFY_FIELDS = [
   { key: 'proximoFollowUp', label: 'Urgência (próximo follow-up)' },
 ];
 
-export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }) {
+export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, onClosedDeal }) {
   const [form, setForm] = useState(() => ({ ...item }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -331,6 +331,10 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved }
         setHandoffError(result || 'Não foi possível salvar. Tente novamente.');
         return;
       }
+
+      // Handoff confirmado com sucesso = o negócio virou "Fechado" de
+      // verdade — pedido do Tiago em 31/08/2026, comemora aqui.
+      onClosedDeal?.({ empresa: item.empresa, valorEstimado: form.valorEstimado ?? item.valorEstimado });
 
       const secondaryUser = (meta.users || []).find((u) => String(u.id) === String(secondaryId));
       const authorName = currentUser?.name || 'Vendedor';

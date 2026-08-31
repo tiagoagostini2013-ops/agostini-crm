@@ -566,3 +566,103 @@ a { color: var(--accent); }
 }
 .followup-nudge-actions { display: flex; gap: 14px; margin-top: 6px; flex-wrap: wrap; }
 .followup-nudge-actions .btn-link { font-size: 0.82rem; font-weight: 600; }
+
+/* ---------- Comemoração de negócio fechado (pedido do Tiago em 31/08/2026) ---------- */
+.celebration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(16, 24, 32, 0.55);
+  backdrop-filter: blur(2px);
+  cursor: pointer;
+  animation: celebration-fade-in 0.2s ease-out;
+}
+.celebration-confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.celebration-confetti-piece {
+  position: absolute;
+  top: -5vh;
+  border-radius: 2px;
+  opacity: 0.95;
+  animation-name: celebration-confetti-fall;
+  animation-timing-function: cubic-bezier(0.35, 0, 0.65, 1);
+  animation-iteration-count: 1;
+  animation-fill-mode: forwards;
+}
+@keyframes celebration-confetti-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--drift), 115vh) rotate(var(--spin)); opacity: 0.85; }
+}
+@keyframes celebration-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes celebration-pop-in {
+  0% { transform: scale(0.7) translateY(10px); opacity: 0; }
+  60% { transform: scale(1.04) translateY(0); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+.celebration-card {
+  position: relative;
+  background: var(--paper);
+  border-radius: 20px;
+  padding: 36px 40px 30px;
+  max-width: 380px;
+  width: calc(100% - 40px);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  cursor: default;
+  animation: celebration-pop-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+  background-image: linear-gradient(var(--paper), var(--paper)), linear-gradient(120deg, #2a78d6, #e87ba4, #eda100);
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  border: 3px solid transparent;
+}
+.celebration-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: none;
+  background: transparent;
+  font-size: 1.4rem;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.celebration-close:hover { color: var(--ink); }
+.celebration-emoji { font-size: 3rem; line-height: 1; margin-bottom: 6px; }
+.celebration-title {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.celebration-subtitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.celebration-deal {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 22px;
+}
+.celebration-deal-empresa { font-size: 0.9rem; color: var(--ink-soft); margin-bottom: 4px; }
+.celebration-deal-valor { font-size: 1.7rem; font-weight: 800; color: var(--good); }
+.celebration-continue { width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  .celebration-confetti-piece { display: none; }
+  .celebration-card { animation: none; }
+  .celebration-overlay { animation: none; }
+}
