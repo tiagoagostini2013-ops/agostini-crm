@@ -311,6 +311,10 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
   // vendedor secundário como responsável + registrar o contexto da venda).
   function handleSaveClick() {
     const changed = diff();
+    if (changed.name !== undefined && !changed.name.trim()) {
+      setError('O nome não pode ficar em branco.');
+      return;
+    }
     if (changed.estagio === 'Fechado' && item.estagio !== 'Fechado') {
       setHandoffError('');
       setPendingCloseChanges(changed);
@@ -379,8 +383,20 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
       <div className="drawer-backdrop" onClick={onClose} />
       <div className="drawer">
         <div className="drawer-header">
-          <div>
-            <h2>{item.name}</h2>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Editável (pedido do Tiago em 31/08/2026 — bug real: nomes
+                capturados errado pela extensão do WhatsApp, ex:
+                "luizmoreiraandre430", não tinham NENHUM jeito de ser
+                corrigidos, nem aqui nem na extensão). Mesmo botão "Salvar
+                alterações" do resto do formulário — não é um campo separado. */}
+            <input
+              className="drawer-title-input"
+              value={form.name || ''}
+              onChange={(e) => update('name', e.target.value)}
+              placeholder="Nome do lead"
+              aria-label="Nome do lead"
+              title="Clique para corrigir o nome"
+            />
             <div className="empresa">{item.empresa || 'Sem empresa cadastrada'}</div>
           </div>
           <button className="close" onClick={onClose} aria-label="Fechar">

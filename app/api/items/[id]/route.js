@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { updateItemColumns, fetchItemColumnText } from '../../../../lib/monday';
+import { updateItemColumns, renameItem, fetchItemColumnText } from '../../../../lib/monday';
 import { BOARD_ID, COLUMNS, STAGE_DATE_COLUMNS } from '../../../../lib/config';
 import { buildColumnValues } from '../../../../lib/transform';
 
@@ -8,6 +8,21 @@ export const dynamic = 'force-dynamic';
 export async function PATCH(request, { params }) {
   try {
     const fields = await request.json();
+
+    // "name" é o título nativo do item, não uma coluna — não passa por
+    // buildColumnValues/change_multiple_column_values, tem mutação própria
+    // (ver renameItem em lib/monday.js). Bug corrigido em 31/08/2026: até
+    // aqui não existia NENHUM jeito de corrigir um nome capturado errado.
+    let renomeado = false;
+    if (fields.name !== undefined) {
+      const nomeLimpo = String(fields.name || '').trim();
+      if (!nomeLimpo) {
+        return NextResponse.json({ error: 'O nome não pode ficar em branco.' }, { status: 400 });
+      }
+      await renameItem(BOARD_ID, Number(params.id), nomeLimpo);
+      renomeado = true;
+    }
+
     const columnValues = buildColumnValues(fields);
 
     // Carimba a data de hoje na coluna correspondente sempre que o PATCH
@@ -39,6 +54,8 @@ export async function PATCH(request, { params }) {
     }
 
     if (Object.keys(columnValues).length === 0) {
+      // Se a única mudança foi o nome, já foi salvo acima — nada mais a fazer.
+      if (renomeado) return NextResponse.json({ ok: true });
       return NextResponse.json({ error: 'Nenhum campo para atualizar.' }, { status: 400 });
     }
     await updateItemColumns(BOARD_ID, Number(params.id), columnValues);

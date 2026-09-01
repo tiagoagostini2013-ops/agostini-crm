@@ -357,6 +357,32 @@ a { color: var(--accent); }
 }
 .drawer-header h2 { margin: 0 0 4px; font-size: 1.1rem; }
 .drawer-header .empresa { color: var(--ink-soft); font-size: 0.88rem; }
+/* Título editável do drawer (pedido do Tiago em 31/08/2026) — parece texto
+   normal em repouso, mas com uma pista visual de que dá pra clicar e
+   corrigir (borda pontilhada sutil + ✏️ no hover), já que antes esse "nome"
+   não tinha jeito nenhum de ser editado. */
+.drawer-title-input {
+  display: block;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 2px 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--ink);
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 4px;
+}
+.drawer-title-input:hover {
+  border-color: var(--line);
+  background: var(--bg);
+}
+.drawer-title-input:focus {
+  outline: none;
+  border: 1px solid var(--accent);
+  background: var(--paper);
+}
 .drawer-header button.close {
   border: none; background: transparent; font-size: 1.3rem; cursor: pointer; color: var(--ink-soft); line-height: 1;
 }
