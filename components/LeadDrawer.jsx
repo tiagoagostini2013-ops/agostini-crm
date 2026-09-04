@@ -337,7 +337,11 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
           ...pendingCloseChanges,
           responsavelIds: mergedIds,
           vendedorPosVenda: String(secondaryId),
-          estagioPosVenda: 'Entregue',
+          // "Aguardando Entrega", não "Entregue" — o fechamento da venda no
+          // CRM não significa que a máquina já chegou ao cliente (ajustado
+          // em 04/09/2026, ver lib/config.js). O card só vira "Entregue" de
+          // verdade quando alguém arrasta ele no Kanban de Pós-venda.
+          estagioPosVenda: 'Aguardando Entrega',
         },
         { returnErrorMessage: true }
       );

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { updateItemColumns, renameItem, fetchItemColumnText } from '../../../../lib/monday';
-import { BOARD_ID, COLUMNS, STAGE_DATE_COLUMNS } from '../../../../lib/config';
+import { BOARD_ID, COLUMNS, STAGE_DATE_COLUMNS, POS_VENDA_STAGE_DATE_COLUMNS } from '../../../../lib/config';
 import { buildColumnValues } from '../../../../lib/transform';
 
 export const dynamic = 'force-dynamic';
@@ -38,6 +38,16 @@ export async function PATCH(request, { params }) {
     if (dateFieldKey) {
       const today = new Date().toISOString().slice(0, 10);
       columnValues[COLUMNS[dateFieldKey]] = { date: today };
+    }
+
+    // Mesmo princípio acima, mas pro Kanban de Pós-venda (ajustado em
+    // 04/09/2026): carimba a data de hoje quando o card entra em "Entregue"
+    // de verdade — separado da "Data Fechamento" (venda assinada), que já é
+    // carimbada no bloco acima quando o estágio de VENDAS vira "Fechado".
+    const posVendaDateFieldKey = POS_VENDA_STAGE_DATE_COLUMNS[fields.estagioPosVenda];
+    if (posVendaDateFieldKey) {
+      const today = new Date().toISOString().slice(0, 10);
+      columnValues[COLUMNS[posVendaDateFieldKey]] = { date: today };
     }
 
     // Carimba a Data de Primeiro Contato (Fase 7) na primeira vez que o

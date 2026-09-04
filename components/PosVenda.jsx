@@ -72,7 +72,14 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
     const map = {};
     POS_VENDA_STAGES.forEach((s) => (map[s.value] = []));
     baseInstalada.forEach((it) => {
-      const estagio = POS_VENDA_STAGES.some((s) => s.value === it.estagioPosVenda) ? it.estagioPosVenda : 'Entregue';
+      // "Aguardando Entrega" é o padrão pra quem ainda não tem estágio de
+      // pós-venda gravado — tanto os que acabaram de passar pelo handoff
+      // quanto os leads fechados antes dessa funcionalidade existir. Nunca
+      // presume "Entregue": isso só é verdade quando alguém arrasta o card
+      // pra lá de propósito (ver lib/config.js).
+      const estagio = POS_VENDA_STAGES.some((s) => s.value === it.estagioPosVenda)
+        ? it.estagioPosVenda
+        : 'Aguardando Entrega';
       map[estagio].push(it);
     });
     // Quem está há mais tempo sem contato aparece primeiro em cada coluna —
@@ -109,7 +116,9 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
         throw new Error(data.error || 'Erro ao mover o cliente.');
       }
     } catch (err) {
-      onUpdateItem?.(draggableId, { estagioPosVenda: previousStage === 'Entregue' ? null : previousStage });
+      onUpdateItem?.(draggableId, {
+        estagioPosVenda: previousStage === 'Aguardando Entrega' ? null : previousStage,
+      });
       setDragError(err.message);
     }
   }
@@ -223,9 +232,11 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
       <div className="metrics-section">
         <h3>Quadro de Pós-venda</h3>
         <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
-          Todo cliente entregue aparece aqui — arraste o card conforme o relacionamento evolui, do mesmo jeito que
-          o Kanban de vendas. Separado de propósito: o vendedor de pós-venda (marcado com {'🤝'} no card de
-          vendas) gerencia a carteira dele por aqui, sem misturar com o funil de vendas ativo.
+          Todo cliente com venda fechada aparece aqui, começando em "Aguardando Entrega" — fechar a venda no CRM
+          não significa que a máquina já chegou ao cliente. Arraste pra "Entregue" só quando a entrega realmente
+          acontecer (a data fica registrada automaticamente), e siga arrastando conforme o relacionamento evolui,
+          do mesmo jeito que o Kanban de vendas. Separado de propósito: o vendedor de pós-venda (marcado com{' '}
+          {'🤝'} no card de vendas) gerencia a carteira dele por aqui, sem misturar com o funil de vendas ativo.
         </p>
         {dragError && <div className="banner banner-error" style={{ marginBottom: 12 }}>{dragError}</div>}
         {baseInstalada.length === 0 ? (
@@ -261,6 +272,13 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
                                 >
                                   <h4>{item.name}</h4>
                                   {item.empresa && <div className="empresa">{item.empresa}</div>}
+                                  {item.dataEntregaEfetiva && (
+                                    <div className="meta-row">
+                                      <span className="chip" title="Data de entrega efetiva">
+                                        🚚 {fmtDate(item.dataEntregaEfetiva)}
+                                      </span>
+                                    </div>
+                                  )}
                                   <div className="footer-row">
                                     <span>{usersById[item.vendedorPosVenda]?.name || 'Sem pós-venda definido'}</span>
                                     {formatMoney(item.valorEstimado) && (
