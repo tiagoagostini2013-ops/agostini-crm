@@ -328,7 +328,19 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
     setHandoffSaving(true);
     try {
       const mergedIds = Array.from(new Set([...responsavelIds, String(secondaryId)]));
-      const result = await save({ ...pendingCloseChanges, responsavelIds: mergedIds }, { returnErrorMessage: true });
+      // Além de somar o secundário em "Responsável" (como já era), grava os
+      // dois campos estruturados que alimentam o Kanban de Pós-venda e a
+      // limpeza do card de vendas (ver lib/config.js) — sem isso o sistema
+      // nunca saberia distinguir quem é principal e quem é secundário.
+      const result = await save(
+        {
+          ...pendingCloseChanges,
+          responsavelIds: mergedIds,
+          vendedorPosVenda: String(secondaryId),
+          estagioPosVenda: 'Entregue',
+        },
+        { returnErrorMessage: true }
+      );
       if (result !== true) {
         // refletimos o erro no próprio modal, pra não obrigar a pessoa a
         // fechar o modal só pra ver o motivo da falha.

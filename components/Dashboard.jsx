@@ -414,7 +414,7 @@ export default function Dashboard() {
 
       {meta && items && view === 'posvenda' && (
         <div className="metrics-scroll">
-          <PosVenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
+          <PosVenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} onUpdateItem={updateLocalItem} />
         </div>
       )}
 
@@ -475,6 +475,16 @@ export default function Dashboard() {
                                       📄 {item.propostas.length}
                                     </span>
                                   )}
+                                  {item.vendedorPosVenda && (
+                                    <span
+                                      className="chip"
+                                      title={`Handoff feito — pós-venda com ${
+                                        usersById[item.vendedorPosVenda]?.name || 'vendedor secundário'
+                                      } (ver aba Pós-venda)`}
+                                    >
+                                      🤝 {usersById[item.vendedorPosVenda]?.name?.split(' ')[0] || 'Pós-venda'}
+                                    </span>
+                                  )}
                                   {(() => {
                                     const ultimo = ultimoEnvio(item.rastreioPropostas);
                                     if (!ultimo) return null;
@@ -500,10 +510,20 @@ export default function Dashboard() {
                                 </div>
                                 <div className="footer-row">
                                   <span>
-                                    {item.responsavelIds
-                                      .map((id) => usersById[id]?.name)
-                                      .filter(Boolean)
-                                      .join(', ') || 'Sem responsável'}
+                                    {(() => {
+                                      // Depois do handoff de entrega, "Responsável" carrega
+                                      // os dois vendedores (principal + pós-venda) — mas o
+                                      // Kanban de VENDAS só precisa mostrar quem está
+                                      // tocando a venda. O secundário some daqui e passa a
+                                      // viver no Kanban de Pós-venda (pedido do Tiago em
+                                      // 02/09/2026, depois de reclamar que o card ficava
+                                      // "bagunçado" com dois nomes juntos).
+                                      const idsVenda = item.vendedorPosVenda
+                                        ? item.responsavelIds.filter((id) => id !== item.vendedorPosVenda)
+                                        : item.responsavelIds;
+                                      const nomes = idsVenda.map((id) => usersById[id]?.name).filter(Boolean);
+                                      return nomes.join(', ') || 'Sem responsável';
+                                    })()}
                                   </span>
                                   {formatMoney(item.valorEstimado) && (
                                     <span className="valor">{formatMoney(item.valorEstimado)}</span>

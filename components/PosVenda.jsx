@@ -1,6 +1,8 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { POS_VENDA_STAGES } from '../lib/config';
 
 // Visão de "Pós-venda / Base Instalada" — Fase 4 do roadmap. Em vez de criar
 // um board novo no monday.com (opção descartada pelo Tiago), esta visão só
@@ -54,8 +56,63 @@ function normalizeEmpresa(nome) {
   return (nome || '').trim().toLowerCase();
 }
 
-export default function PosVenda({ items, usersById, onSelect }) {
+export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
   const baseInstalada = useMemo(() => items.filter((it) => it.estagio === 'Fechado'), [items]);
+
+  const [dragError, setDragError] = useState('');
+
+  // Kanban de Pós-venda (pedido do Tiago em 02/09/2026): ciclo de vida do
+  // cliente depois da entrega, gerenciado pelo vendedor de pós-venda a
+  // partir daqui — separado do Kanban de vendas, sem precisar de um board
+  // novo no monday.com (mesma decisão já tomada na Fase 4, só reaproveitando
+  // os dados que a base instalada já carrega). Leads fechados antes desta
+  // funcionalidade existir não têm `estagioPosVenda` gravado — entram em
+  // "Entregue" por padrão até alguém arrastar o card pela primeira vez.
+  const porEstagioPosVenda = useMemo(() => {
+    const map = {};
+    POS_VENDA_STAGES.forEach((s) => (map[s.value] = []));
+    baseInstalada.forEach((it) => {
+      const estagio = POS_VENDA_STAGES.some((s) => s.value === it.estagioPosVenda) ? it.estagioPosVenda : 'Entregue';
+      map[estagio].push(it);
+    });
+    // Quem está há mais tempo sem contato aparece primeiro em cada coluna —
+    // mesmo critério de urgência já usado na lista de reativação acima.
+    Object.values(map).forEach((lista) => {
+      lista.sort((a, b) => {
+        const da = daysSince(a.ultimoContato);
+        const db = daysSince(b.ultimoContato);
+        const va = da === null ? Infinity : da;
+        const vb = db === null ? Infinity : db;
+        return vb - va;
+      });
+    });
+    return map;
+  }, [baseInstalada]);
+
+  async function handleDragEnd(result) {
+    const { source, destination, draggableId } = result;
+    if (!destination || destination.droppableId === source.droppableId) return;
+
+    const newStage = destination.droppableId;
+    const previousStage = source.droppableId;
+    setDragError('');
+    onUpdateItem?.(draggableId, { estagioPosVenda: newStage });
+
+    try {
+      const res = await fetch(`/api/items/${draggableId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estagioPosVenda: newStage }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erro ao mover o cliente.');
+      }
+    } catch (err) {
+      onUpdateItem?.(draggableId, { estagioPosVenda: previousStage === 'Entregue' ? null : previousStage });
+      setDragError(err.message);
+    }
+  }
 
   const porSegmento = useMemo(() => {
     const map = {};
@@ -66,10 +123,17 @@ export default function PosVenda({ items, usersById, onSelect }) {
     return Object.entries(map).sort((a, b) => b[1] - a[1]);
   }, [baseInstalada]);
 
+  // Até 02/09/2026, isso somava TODOS os responsavelIds do lead (principal +
+  // secundário juntos), porque não havia como distinguir os dois papéis —
+  // ambiguidade documentada no Benchmark/Roadmap (Fase 9, item 3). Agora que
+  // o handoff grava `vendedorPosVenda` estruturado, usamos ele quando
+  // existe — é o dono de verdade da carteira de pós-venda. Leads fechados
+  // antes dessa mudança (sem o campo gravado) caem no fallback antigo, pra
+  // não sumir da conta.
   const porResponsavel = useMemo(() => {
     const map = {};
     baseInstalada.forEach((it) => {
-      const ids = it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
+      const ids = it.vendedorPosVenda ? [it.vendedorPosVenda] : it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
       ids.forEach((id) => {
         map[id] = (map[id] || 0) + 1;
       });
@@ -156,6 +220,90 @@ export default function PosVenda({ items, usersById, onSelect }) {
 
   return (
     <div className="metrics-view">
+      <div className="metrics-section">
+        <h3>Quadro de Pós-venda</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          Todo cliente entregue aparece aqui — arraste o card conforme o relacionamento evolui, do mesmo jeito que
+          o Kanban de vendas. Separado de propósito: o vendedor de pós-venda (marcado com {'🤝'} no card de
+          vendas) gerencia a carteira dele por aqui, sem misturar com o funil de vendas ativo.
+        </p>
+        {dragError && <div className="banner banner-error" style={{ marginBottom: 12 }}>{dragError}</div>}
+        {baseInstalada.length === 0 ? (
+          <div style={{ color: 'var(--ink-soft)', fontSize: '0.9rem' }}>
+            Nenhum lead fechado ainda no filtro atual — assim que um lead virar "Fechado", ele aparece aqui.
+          </div>
+        ) : (
+          <DragDropContext onDragEnd={handleDragEnd}>
+            <div className="board-scroll">
+              <div className="board-columns">
+                {POS_VENDA_STAGES.map((stage) => (
+                  <div className="stage-column" key={stage.value}>
+                    <div className="stage-header" style={{ background: stage.color, color: stage.textColor }}>
+                      <span>{stage.value}</span>
+                      <span className="badge">{porEstagioPosVenda[stage.value]?.length || 0}</span>
+                    </div>
+                    <Droppable droppableId={stage.value}>
+                      {(provided, snapshot) => (
+                        <div
+                          className={`stage-body${snapshot.isDraggingOver ? ' drag-over' : ''}`}
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                        >
+                          {(porEstagioPosVenda[stage.value] || []).map((item, index) => (
+                            <Draggable draggableId={item.id} index={index} key={item.id}>
+                              {(provided, snapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  className={`lead-card${snapshot.isDragging ? ' dragging' : ''}`}
+                                  onClick={() => onSelect(item.id)}
+                                >
+                                  <h4>{item.name}</h4>
+                                  {item.empresa && <div className="empresa">{item.empresa}</div>}
+                                  <div className="footer-row">
+                                    <span>{usersById[item.vendedorPosVenda]?.name || 'Sem pós-venda definido'}</span>
+                                    {formatMoney(item.valorEstimado) && (
+                                      <span className="valor">{formatMoney(item.valorEstimado)}</span>
+                                    )}
+                                  </div>
+                                  {(() => {
+                                    const dias = daysSince(item.ultimoContato);
+                                    if (dias === null) {
+                                      return (
+                                        <div className="footer-row" style={{ marginTop: 4 }}>
+                                          <span className="stale">⚠ nunca contatado</span>
+                                        </div>
+                                      );
+                                    }
+                                    if (dias > DIAS_SEM_CONTATO_ALERTA) {
+                                      return (
+                                        <div className="footer-row" style={{ marginTop: 4 }}>
+                                          <span className="stale">⚠ {dias}d sem contato</span>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                          {(porEstagioPosVenda[stage.value] || []).length === 0 && (
+                            <div className="empty-col">Nenhum cliente aqui.</div>
+                          )}
+                        </div>
+                      )}
+                    </Droppable>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </DragDropContext>
+        )}
+      </div>
+
       <div className="metrics-grid">
         <div className="metric-card">
           <div className="metric-label">Clientes na base instalada</div>

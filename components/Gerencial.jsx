@@ -294,11 +294,28 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       return map[id];
     }
     for (const it of items) {
+      if (it.estagio === 'Fechado') {
+        // Até 02/09/2026 isso somava TODO responsavelIds (principal +
+        // secundário do handoff juntos) — inflava a carteira do principal
+        // com fechamentos que ele não acompanha mais no dia a dia.
+        // `vendedorPosVenda` (estruturado, gravado pelo handoff) resolve
+        // isso: conta só pra quem realmente carrega o pós-venda hoje.
+        // Fechados sem esse campo (anteriores à mudança) caem no fallback
+        // antigo, pra não sumir da conta de ninguém.
+        const ids = it.vendedorPosVenda
+          ? [it.vendedorPosVenda]
+          : it.responsavelIds && it.responsavelIds.length
+            ? it.responsavelIds
+            : ['sem-responsavel'];
+        ids.forEach((id) => {
+          ensure(id).posVenda += 1;
+        });
+        continue;
+      }
       const ids = it.responsavelIds && it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
       for (const id of ids) {
         const row = ensure(id);
-        if (it.estagio === 'Fechado') row.posVenda += 1;
-        else if (it.estagio === 'Perdido') row.perdido += 1;
+        if (it.estagio === 'Perdido') row.perdido += 1;
         else row.ativo += 1;
       }
     }
@@ -833,8 +850,20 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
                     openDrill(
                       `Carteira de ${nome}`,
                       items.filter((it) => {
-                        const meu = r.id === 'sem-responsavel' ? it.responsavelIds.length === 0 : it.responsavelIds.includes(r.id);
-                        return meu && it.estagio !== 'Perdido';
+                        if (it.estagio === 'Perdido') return false;
+                        // Mesmo critério da contagem acima: um fechado conta pra quem tem
+                        // `vendedorPosVenda` estruturado (ou, na falta dele, pra quem está
+                        // em Responsável) — não mistura com o vendedor original se o
+                        // handoff já aconteceu.
+                        if (it.estagio === 'Fechado') {
+                          const donoPosVenda = it.vendedorPosVenda
+                            ? [it.vendedorPosVenda]
+                            : it.responsavelIds.length
+                              ? it.responsavelIds
+                              : ['sem-responsavel'];
+                          return r.id === 'sem-responsavel' ? donoPosVenda.includes('sem-responsavel') : donoPosVenda.includes(r.id);
+                        }
+                        return r.id === 'sem-responsavel' ? it.responsavelIds.length === 0 : it.responsavelIds.includes(r.id);
                       }),
                       'Fechados (pós-venda) + leads em prospecção — perdidos ficam fora, como no cálculo da tabela.'
                     )
