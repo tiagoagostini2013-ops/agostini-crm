@@ -155,6 +155,21 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
     [baseInstalada]
   );
 
+  // Receita em recompras diretas (Fase 9 / pedido do Tiago em 08/09/2026):
+  // soma o valor de TODAS as vendas adicionais (ex: reposição de peças)
+  // registradas em qualquer cliente da base instalada — ver
+  // LeadDrawer.jsx/lib/config.js. Separado de `valorTotal` de propósito:
+  // aquele é o valor das vendas originais (campo Valor Estimado do funil),
+  // este é receita que só existe por causa do relacionamento pós-venda.
+  const recomprasDiretasTotal = useMemo(
+    () =>
+      baseInstalada.reduce(
+        (acc, it) => acc + (it.vendasAdicionais || []).reduce((s, v) => s + (Number(v.valor) || 0), 0),
+        0
+      ),
+    [baseInstalada]
+  );
+
   const semContatoRecente = useMemo(
     () =>
       baseInstalada.filter((it) => {
@@ -279,6 +294,19 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
                                       </span>
                                     </div>
                                   )}
+                                  {(() => {
+                                    const vendas = item.vendasAdicionais || [];
+                                    if (vendas.length === 0) return null;
+                                    const total = vendas.reduce((s, v) => s + (Number(v.valor) || 0), 0);
+                                    return (
+                                      <div className="meta-row">
+                                        <span className="chip" title="Vendas adicionais registradas (recompras diretas)">
+                                          🔁 {vendas.length}
+                                          {formatMoney(total) ? ` · ${formatMoney(total)}` : ''}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
                                   <div className="footer-row">
                                     <span>{usersById[item.vendedorPosVenda]?.name || 'Sem pós-venda definido'}</span>
                                     {formatMoney(item.valorEstimado) && (
@@ -338,6 +366,10 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
         <div className="metric-card">
           <div className="metric-label">Sem contatos/decisores cadastrados</div>
           <div className="metric-value">{semContatosDecisao.length}</div>
+        </div>
+        <div className="metric-card">
+          <div className="metric-label">Receita em recompras diretas</div>
+          <div className="metric-value">{formatMoney(recomprasDiretasTotal) || '—'}</div>
         </div>
       </div>
 
@@ -487,6 +519,7 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
                   <th>Segmento</th>
                   <th>Responsável(is)</th>
                   <th>Contatos/decisores</th>
+                  <th>Recompras</th>
                   <th>Último contato</th>
                   <th>Valor</th>
                 </tr>
@@ -495,6 +528,8 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
                 {baseInstalada.map((it) => {
                   const dias = daysSince(it.ultimoContato);
                   const stale = dias === null || dias > DIAS_SEM_CONTATO_ALERTA;
+                  const vendasIt = it.vendasAdicionais || [];
+                  const vendasItTotal = vendasIt.reduce((s, v) => s + (Number(v.valor) || 0), 0);
                   return (
                     <tr
                       key={it.id}
@@ -512,6 +547,11 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
                           'Sem responsável'}
                       </td>
                       <td>{it.contatos && it.contatos.length > 0 ? it.contatos.length : '—'}</td>
+                      <td>
+                        {vendasIt.length > 0
+                          ? `${vendasIt.length}${formatMoney(vendasItTotal) ? ` (${formatMoney(vendasItTotal)})` : ''}`
+                          : '—'}
+                      </td>
                       <td style={stale ? { color: 'var(--danger)' } : undefined}>
                         {fmtDate(it.ultimoContato)}
                         {stale && dias !== null && ` (${dias}d)`}

@@ -16,6 +16,26 @@ function fmtDate(d) {
   }
 }
 
+// Formata uma data "pura" (YYYY-MM-DD, sem hora) sem passar por new Date() —
+// o construtor interpreta "2026-09-08" como meia-noite UTC, e num fuso
+// negativo (Brasil) isso pode voltar pro dia anterior na hora de exibir.
+// Vendas adicionais só guardam data (sem hora), então formatamos na unha.
+function fmtDateOnly(d) {
+  if (!d) return '';
+  const s = String(d).slice(0, 10);
+  const [y, m, day] = s.split('-');
+  if (!y || !m || !day) return s;
+  return `${day}/${m}/${y}`;
+}
+
+// Valor de uma venda adicional pode vir null (registro sem valor informado).
+function fmtValor(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  if (Number.isNaN(n)) return null;
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
 // Formata milissegundos acumulados de visualização como "Xmin" (ou "Xs" se
 // menos de 1 minuto) — não precisa de mais precisão que isso pra uma
 // estimativa de tempo de leitura.
@@ -61,6 +81,21 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
   const [copyingSendId, setCopyingSendId] = useState(null);
   const [copiedSendId, setCopiedSendId] = useState(null);
 
+  // Vendas adicionais (recompras diretas — ex: reposição de peças) do
+  // cliente já fechado. Mesmo padrão de `arquivos`: estado local próprio,
+  // sincronizado com o item no useEffect abaixo e atualizado a partir da
+  // resposta da rota dedicada (não do PATCH genérico — ver
+  // app/api/items/[id]/vendas-adicionais/route.js).
+  const [vendasAdicionais, setVendasAdicionais] = useState(item.vendasAdicionais || []);
+  const [novaVenda, setNovaVenda] = useState({
+    data: new Date().toISOString().slice(0, 10),
+    descricao: '',
+    valor: '',
+  });
+  const [addingVenda, setAddingVenda] = useState(false);
+  const [removingVendaId, setRemovingVendaId] = useState(null);
+  const [vendaError, setVendaError] = useState('');
+
   async function handleCopyTrackLink(sendId) {
     setCopyingSendId(sendId);
     try {
@@ -81,6 +116,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
     setForm({ ...item });
     setError('');
     setArquivos(item.propostas || []);
+    setVendasAdicionais(item.vendasAdicionais || []);
   }, [item]);
 
   useEffect(() => {
@@ -276,6 +312,74 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
       setFileError(`Falha ao remover "${file.name}": ${err.message}`);
     } finally {
       setDeletingAssetId(null);
+    }
+  }
+
+  // Registra uma venda adicional (recompra) pro cliente já fechado — não
+  // mexe no PATCH genérico nem no estágio/funil, só chama a rota dedicada
+  // (leitura-modificação-escrita no servidor, ver
+  // app/api/items/[id]/vendas-adicionais/route.js). Pedido do Tiago em
+  // 08/09/2026: peças de reposição etc. são vendas diretas, sem passar pelo
+  // funil, e ficam vinculadas só ao card do cliente na aba Pós-venda.
+  async function handleAddVenda() {
+    const descricaoLimpa = novaVenda.descricao.trim();
+    if (!descricaoLimpa) {
+      setVendaError('Descreva o que foi vendido.');
+      return;
+    }
+    setAddingVenda(true);
+    setVendaError('');
+    try {
+      const res = await fetch(`/api/items/${item.id}/vendas-adicionais`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          descricao: descricaoLimpa,
+          valor: novaVenda.valor,
+          data: novaVenda.data,
+          // Mesmo motivo de addNote(): o monday.com sempre atribui a escrita
+          // à conta dona do token de API, então quem registrou de verdade
+          // vai como dado, não como autoria automática do servidor.
+          registradoPor: currentUser?.name,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao registrar venda.');
+      setVendasAdicionais(data.vendasAdicionais || []);
+      onSaved(item.id, { vendasAdicionais: data.vendasAdicionais || [] });
+      // Registrar uma venda também carimba "Último contato" no servidor
+      // (mesmo princípio de addNote) — sincroniza aqui pro card refletir
+      // sem precisar recarregar.
+      if (data.ultimoContato) {
+        update('ultimoContato', data.ultimoContato);
+        onSaved(item.id, { ultimoContato: data.ultimoContato });
+      }
+      setNovaVenda({ data: new Date().toISOString().slice(0, 10), descricao: '', valor: '' });
+    } catch (err) {
+      setVendaError(err.message);
+    } finally {
+      setAddingVenda(false);
+    }
+  }
+
+  async function handleRemoveVenda(venda) {
+    if (!window.confirm(`Remover o registro "${venda.descricao}"? Essa ação não pode ser desfeita.`)) return;
+    setVendaError('');
+    setRemovingVendaId(venda.id);
+    try {
+      const res = await fetch(`/api/items/${item.id}/vendas-adicionais`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendaId: venda.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao remover venda.');
+      setVendasAdicionais(data.vendasAdicionais || []);
+      onSaved(item.id, { vendasAdicionais: data.vendasAdicionais || [] });
+    } catch (err) {
+      setVendaError(err.message);
+    } finally {
+      setRemovingVendaId(null);
     }
   }
 
@@ -790,6 +894,86 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
             {saving ? 'Salvando...' : 'Salvar alterações'}
           </button>
         </div>
+
+        {item.estagio === 'Fechado' && (
+          <div className="drawer-section">
+            <h3>Vendas adicionais (recompras)</h3>
+            <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+              Pra vendas diretas a este cliente depois do fechamento (ex: reposição de peças) — não passa pelo funil
+              nem abre um card novo no Kanban de vendas, fica só registrado aqui no histórico do cliente.
+            </p>
+            {vendaError && <div className="banner banner-error">{vendaError}</div>}
+            {vendasAdicionais.length === 0 ? (
+              <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
+                Nenhuma venda adicional registrada ainda.
+              </div>
+            ) : (
+              <div className="propostas-list" style={{ marginBottom: 12 }}>
+                {[...vendasAdicionais]
+                  .sort((a, b) => new Date(b.data) - new Date(a.data))
+                  .map((v) => (
+                    <div key={v.id} className="proposta-item-row">
+                      <div style={{ flex: 1, padding: '6px 4px' }}>
+                        <div>
+                          {fmtDateOnly(v.data)} — {v.descricao}
+                          {fmtValor(v.valor) ? ` (${fmtValor(v.valor)})` : ''}
+                        </div>
+                        {v.registradoPor && (
+                          <div style={{ color: 'var(--ink-soft)', fontSize: '0.78rem' }}>
+                            registrado por {v.registradoPor}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="proposta-delete-btn"
+                        title="Remover registro"
+                        disabled={removingVendaId === v.id}
+                        onClick={() => handleRemoveVenda(v)}
+                      >
+                        {removingVendaId === v.id ? '...' : '🗑️'}
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+            <div className="field-row" style={{ alignItems: 'flex-end' }}>
+              <div className="field" style={{ maxWidth: 150, marginBottom: 0 }}>
+                <label>Data</label>
+                <input
+                  type="date"
+                  value={novaVenda.data}
+                  onChange={(e) => setNovaVenda((v) => ({ ...v, data: e.target.value }))}
+                />
+              </div>
+              <div className="field" style={{ flex: 2, marginBottom: 0 }}>
+                <label>O que foi vendido</label>
+                <input
+                  placeholder="Ex: kit de peças de reposição"
+                  value={novaVenda.descricao}
+                  onChange={(e) => setNovaVenda((v) => ({ ...v, descricao: e.target.value }))}
+                />
+              </div>
+              <div className="field" style={{ maxWidth: 130, marginBottom: 0 }}>
+                <label>Valor (R$)</label>
+                <input
+                  type="number"
+                  value={novaVenda.valor}
+                  onChange={(e) => setNovaVenda((v) => ({ ...v, valor: e.target.value }))}
+                />
+              </div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ marginTop: 10 }}
+              disabled={addingVenda}
+              onClick={handleAddVenda}
+            >
+              {addingVenda ? 'Salvando...' : '+ Registrar venda adicional'}
+            </button>
+          </div>
+        )}
 
         <div className="drawer-section">
           <h3>Anotações</h3>
