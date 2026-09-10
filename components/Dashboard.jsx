@@ -414,7 +414,15 @@ export default function Dashboard() {
 
       {meta && items && view === 'posvenda' && (
         <div className="metrics-scroll">
-          <PosVenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} onUpdateItem={updateLocalItem} />
+          <PosVenda
+            items={filteredItems}
+            usersById={usersById}
+            onSelect={setSelectedId}
+            onUpdateItem={updateLocalItem}
+            meta={meta}
+            currentUser={currentUser}
+            onCreated={loadAll}
+          />
         </div>
       )}
 

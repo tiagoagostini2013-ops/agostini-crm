@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { POS_VENDA_STAGES } from '../lib/config';
+import NovoPosVendaModal from './NovoPosVendaModal';
 
 // Visão de "Pós-venda / Base Instalada" — Fase 4 do roadmap. Em vez de criar
 // um board novo no monday.com (opção descartada pelo Tiago), esta visão só
@@ -56,10 +57,14 @@ function normalizeEmpresa(nome) {
   return (nome || '').trim().toLowerCase();
 }
 
-export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
+export default function PosVenda({ items, usersById, onSelect, onUpdateItem, meta, currentUser, onCreated }) {
   const baseInstalada = useMemo(() => items.filter((it) => it.estagio === 'Fechado'), [items]);
 
   const [dragError, setDragError] = useState('');
+  // "+ Novo Pós-venda" (pedido do Tiago em 10/09/2026) — cliente que já
+  // comprava antes do CRM existir, sem card nenhum ainda, e ele quer lançar
+  // uma venda de peça de reposição pra ele. Ver NovoPosVendaModal.jsx.
+  const [showNovoPosVenda, setShowNovoPosVenda] = useState(false);
 
   // Kanban de Pós-venda (pedido do Tiago em 02/09/2026): ciclo de vida do
   // cliente depois da entrega, gerenciado pelo vendedor de pós-venda a
@@ -245,13 +250,21 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
   return (
     <div className="metrics-view">
       <div className="metrics-section">
-        <h3>Quadro de Pós-venda</h3>
-        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <h3 style={{ margin: 0 }}>Quadro de Pós-venda</h3>
+          <button type="button" className="btn btn-secondary" onClick={() => setShowNovoPosVenda(true)}>
+            + Novo Pós-venda
+          </button>
+        </div>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: 6, marginBottom: 12 }}>
           Todo cliente com venda fechada aparece aqui, começando em "Aguardando Entrega" — fechar a venda no CRM
           não significa que a máquina já chegou ao cliente. Arraste pra "Entregue" só quando a entrega realmente
           acontecer (a data fica registrada automaticamente), e siga arrastando conforme o relacionamento evolui,
           do mesmo jeito que o Kanban de vendas. Separado de propósito: o vendedor de pós-venda (marcado com{' '}
           {'🤝'} no card de vendas) gerencia a carteira dele por aqui, sem misturar com o funil de vendas ativo.
+          Cliente que já comprava antes do CRM existir (sem passar pelo funil) entra pelo botão{' '}
+          <strong>+ Novo Pós-venda</strong> acima — útil, por exemplo, pra já lançar uma venda de peça de reposição
+          pra ele.
         </p>
         {dragError && <div className="banner banner-error" style={{ marginBottom: 12 }}>{dragError}</div>}
         {baseInstalada.length === 0 ? (
@@ -564,6 +577,18 @@ export default function PosVenda({ items, usersById, onSelect, onUpdateItem }) {
             </table>
           </div>
         </>
+      )}
+
+      {showNovoPosVenda && (
+        <NovoPosVendaModal
+          meta={meta}
+          currentUser={currentUser}
+          onClose={() => setShowNovoPosVenda(false)}
+          onCreated={() => {
+            setShowNovoPosVenda(false);
+            onCreated?.();
+          }}
+        />
       )}
     </div>
   );

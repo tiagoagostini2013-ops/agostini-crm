@@ -123,6 +123,18 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
   const semanaInicio = useMemo(() => mondayOf(new Date()), []);
   const seteDiasAtras = useMemo(() => addDays(hoje, -6), [hoje]);
 
+  // Clientes cadastrados retroativamente pelo botão "+ Novo Pós-venda" (ver
+  // NovoPosVendaModal.jsx, pedido do Tiago em 10/09/2026) ficam de fora das
+  // métricas de RITMO do funil abaixo (novos/qualificados/fechados hoje e na
+  // evolução semanal, desempenho por vendedor). Esse item é criado no monday
+  // hoje, mesmo que o cliente já comprasse há anos — sem esse filtro, cada
+  // lote de clientes antigos cadastrados apareceria como um pico de "novos
+  // leads" e infla artificialmente o desempenho do vendedor. Continuam
+  // aparecendo normalmente no "Funil agora" (stageCounts, abaixo) — ali é só
+  // uma foto do estado atual do board, não uma métrica de ritmo, e o Tiago
+  // confirmou que não tem problema misturar ali.
+  const itemsSemHistoricos = useMemo(() => items.filter((it) => !it.clienteHistorico), [items]);
+
   // ---------- KPIs do dia / dos últimos 7 dias ----------
   // Guarda tanto a contagem quanto a lista de leads por trás de cada uma —
   // é o que os cards clicáveis abaixo mostram no drill-down.
@@ -137,7 +149,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       perdHojeLeads: [],
     };
     const amanha = addDays(hoje, 1);
-    for (const it of items) {
+    for (const it of itemsSemHistoricos) {
       const criado = toDateOnly(it.createdAt);
       if (inRange(criado, hoje, amanha)) out.novosHojeLeads.push(it);
       if (inRange(criado, seteDiasAtras, amanha)) out.novos7dLeads.push(it);
@@ -157,7 +169,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       if (inRange(perd, hoje, amanha)) out.perdHojeLeads.push(it);
     }
     return out;
-  }, [items, hoje, seteDiasAtras]);
+  }, [itemsSemHistoricos, hoje, seteDiasAtras]);
 
   const taxaQualificacao7d = kpis.novos7dLeads.length > 0 ? (kpis.qual7dLeads.length / kpis.novos7dLeads.length) * 100 : null;
 
@@ -189,7 +201,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       const end = addDays(start, 7);
       list.push({ start, end, novosLeads: [], qualificadosLeads: [], fechadosLeads: [] });
     }
-    for (const it of items) {
+    for (const it of itemsSemHistoricos) {
       const criado = toDateOnly(it.createdAt);
       const qual = toDateOnly(it.dataQualificacao);
       const fech = toDateOnly(it.dataFechamento);
@@ -205,7 +217,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       qualificados: s.qualificadosLeads.length,
       fechados: s.fechadosLeads.length,
     }));
-  }, [items, semanaInicio]);
+  }, [itemsSemHistoricos, semanaInicio]);
 
   const maxValor = Math.max(1, ...semanas.flatMap((s) => [s.novos, s.qualificados, s.fechados]));
   // Eixo Y arredondado pra um número "redondo" acima do máximo real.
@@ -241,7 +253,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       if (!map[id]) map[id] = { id, total: 0, contatoDiffs: [], noPrazo: 0, comContato: 0, fechados: 0, resolvidos: 0 };
       return map[id];
     }
-    for (const it of items) {
+    for (const it of itemsSemHistoricos) {
       const ids = it.responsavelIds && it.responsavelIds.length ? it.responsavelIds : ['sem-responsavel'];
       for (const id of ids) {
         const row = ensure(id);
@@ -272,7 +284,7 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
         conversaoPct: r.resolvidos ? (r.fechados / r.resolvidos) * 100 : null,
       }))
       .sort((a, b) => b.total - a.total);
-  }, [items]);
+  }, [itemsSemHistoricos]);
 
   // ---------- Fase 9 — carga de pós-venda por vendedor ----------
   // O roadmap original pedia "carga do vendedor SECUNDÁRIO" especificamente,
