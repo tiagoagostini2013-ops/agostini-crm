@@ -28,15 +28,22 @@ export async function GET(request, { params }) {
 // automático.
 export async function POST(request, { params }) {
   try {
-    const { text } = await request.json();
+    const { text, contato } = await request.json();
     if (!text || !text.trim()) {
       return NextResponse.json({ error: 'Escreva algo antes de salvar.' }, { status: 400 });
     }
     const itemId = Number(params.id);
     await addItemNote(itemId, text.trim());
 
+    // `contato: false` = anotação INTERNA (ex: lembrete, contexto, comentário
+    // pra equipe) — fica no histórico mas não carimba "Último contato", pra
+    // diferenciar contato efetivo com o cliente de simples registro. Sem o
+    // campo (ou true) o comportamento de sempre é mantido (pedido de 21/08).
     const hoje = new Date().toISOString().slice(0, 10);
     let ultimoContato = null;
+    if (contato === false) {
+      return NextResponse.json({ ok: true, ultimoContato: null });
+    }
     try {
       const columnValues = { [COLUMNS.ultimoContato]: { date: hoje } };
       const contatoAtual = await fetchItemColumnText(itemId, COLUMNS.ultimoContato);

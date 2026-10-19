@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
 import { fetchAllItems, createLead } from '../../../lib/monday';
-import { BOARD_ID, COLUMNS } from '../../../lib/config';
+import { BOARD_ID, columnIdsConfigurados } from '../../../lib/config';
 import { flattenItem, buildColumnValues } from '../../../lib/transform';
 
 export const dynamic = 'force-dynamic';
 
-const COLUMN_IDS = Object.values(COLUMNS);
+// Só pede ao monday as colunas que existem de fato neste ambiente (as colunas
+// novas da v1 de prioridades podem ainda não ter id — ver lib/config.js).
+const COLUMN_IDS = columnIdsConfigurados();
 
 export async function GET() {
   try {

@@ -77,6 +77,7 @@ O arquivo `lib/config.js` é a única fonte de verdade que liga os campos da pá
 | Valor estimado | `Valor Estimado` | número |
 | Motivo de perda | `Motivo de Perda` | status |
 | Último contato / Próximo follow-up | `Data Último Contato` / `Data Próximo Follow-up` | data |
+| Prazo de compra, reativação, pós-venda, impedimento, plano de ação | colunas novas — ver seção "Agenda por trilha" abaixo | data / texto / texto longo |
 
 As listas de opções (segmentos, cargos, canais, motivos de perda) estão hoje fixas em `lib/config.js`, copiadas das opções reais do board. Se vocês criarem um novo segmento ou motivo de perda no monday, adicione a mesma opção nesse arquivo para ela aparecer nos formulários e filtros da página.
 
@@ -93,6 +94,53 @@ As listas de opções (segmentos, cargos, canais, motivos de perda) estão hoje 
 - Aviso visual quando um lead está há mais de 5 dias sem contato.
 - Link direto para abrir o item correspondente no monday.com.
 - Anexar e remover arquivos de um lead direto no painel (card do lead → aba/seção "Arquivos" → **"+ Adicionar arquivo"**): proposta, orçamento de frete, layout do cliente, foto, planilha — qualquer tipo. Cada arquivo mostrado tem um botão de remover (🗑️), para o caso de ter sido anexado por engano; a remoção pede confirmação e não pode ser desfeita. Usa a mesma coluna **"Propostas"** do monday.com por trás (por isso ela também aparece com esse nome se você abrir o lead direto no monday.com) — e o mesmo mecanismo de upload direto pro Vercel Blob descrito na seção do suplemento do Word abaixo, então precisa do mesmo `BLOB_READ_WRITE_TOKEN` configurado.
+
+## Agenda por trilha, prioridades e próxima ação (v1, out/2026)
+
+**Três trilhas**, derivadas do estágio do lead — cada uma com a sua data e as suas regras de alerta:
+
+| Trilha | Estágios | Data usada | Gera alerta? |
+|---|---|---|---|
+| Vendas ativas | Lead, Qualificado, Proposta Enviada, Em Negociação | `Data Próximo Follow-up` (já existia) | Sim: follow-up vencido e "sem data" |
+| Reativação | Perdido | `Data de Reativação` (nova) | Só na aba Reativação (nunca no banner de follow-up vencido). O follow-up antigo de perdidos continua guardado e aparece numa seção recolhida "legado". |
+| Pós-venda | Fechado | `Próximo Contato Pós-venda` (nova) | Sim, só pós-venda atrasado |
+
+Os contadores (selo da aba Agenda, banner do Kanban) e as listagens usam os mesmos filtros da tela e dizem o escopo: "equipe inteira" ou o nome do usuário filtrado. Nenhum dado é excluído.
+
+**Minhas prioridades de hoje** (topo da aba Agenda › Vendas ativas): lista objetiva, com o motivo de cada item e o que está "não informado". Os pesos ficam em `lib/prioridades.js` (`PESOS`) e também aparecem na própria tela, em "Como esta lista é montada". Compromisso combinado com o cliente pesa mais que o valor do negócio. Campo ausente conta 0 ponto — nada é inventado.
+
+**Próxima ação**: toda oportunidade ativa deve ter ação concreta + responsável + data. Registros antigos incompletos são sinalizados (cartão e painel do lead), sem impedir consulta ou edição. "✅ Registrar atividade realizada" pede canal, se houve **contato efetivo com o cliente**, resultado e próximo passo. Só atividade com contato efetivo (ou anotação marcada como contato) atualiza "Último contato"; editar o cadastro não conta.
+
+**Qualificação**: "Prazo previsto de compra" (novo) é separado da data do próximo follow-up. Necessidade, decisor, investimento estimado e principal impedimento aproveitam os campos existentes (o impedimento é novo) e aparecem num resumo no painel do lead; o cartão mostra só compra prevista e impedimento.
+
+### Onde cada dado novo fica guardado (e como evita sobrescritas)
+
+| Dado | Armazenamento | Observação |
+|---|---|---|
+| Prazo previsto de compra | coluna `Prazo Previsto de Compra` (data) | env `MONDAY_COL_PRAZO_COMPRA` |
+| Data de reativação | coluna `Data de Reativação` (data) | env `MONDAY_COL_DATA_REATIVACAO` |
+| Próximo contato pós-venda | coluna `Próximo Contato Pós-venda` (data) | env `MONDAY_COL_PROX_CONTATO_POSVENDA` |
+| Principal impedimento | coluna `Principal Impedimento` (texto) | env `MONDAY_COL_IMPEDIMENTO` |
+| Ação concreta, responsável, "combinado com o cliente", último resultado | coluna `Plano de Ação (JSON)` (texto longo) | env `MONDAY_COL_PLANO_ACAO`; escrito só pelas rotas `/api/items/[id]/proxima-acao` e `/atividades`, nunca pelo PATCH genérico |
+| Histórico completo de atividades | "updates" do item (mesma lista das Anotações) | o JSON guarda só o último resultado |
+
+Conflitos: o plano tem uma revisão por trilha; a rota lê → altera → grava e responde 409 se outra pessoa mudou a mesma trilha entretanto (a tela oferece "usar o valor atual"). Textos são truncados para caber no limite do monday.
+
+### Criar as colunas novas (uma vez por quadro)
+
+Nada é criado automaticamente. Enquanto as variáveis `MONDAY_COL_*` não existirem o CRM roda em **modo compatível** (avisa no painel do lead; só a data de follow-up de vendas é editável). Para criar:
+
+```
+MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-colunas-monday.mjs          # só mostra o que faria
+MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-colunas-monday.mjs --criar  # cria o que falta
+```
+
+O script é idempotente (reaproveita coluna com mesmo título e tipo), não altera colunas nem dados existentes e imprime as linhas `MONDAY_COL_*` para colar na Vercel (depois, redeploy).
+
+### Testes
+
+- `npm test` — testes unitários das regras (trilhas, alertas, prioridades, plano de ação), com dados fictícios.
+- Teste ponta a ponta contra um monday **simulado** (nunca toca o monday real): `npm run build`, depois `node tests/e2e/mock-monday.mjs 4010 &`, `bash tests/e2e/start-app.sh 3100 &` e `python3 tests/e2e/run_e2e.py <token-de-sessão> <pasta-de-prints>` (requer Playwright; o token é um cookie de sessão assinado com `SESSION_SECRET=segredo-de-teste`, ver cabeçalho do script).
 
 ## Suplemento do Word (buscar cliente + vincular proposta)
 

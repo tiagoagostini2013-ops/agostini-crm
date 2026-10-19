@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server';
 import { updateItemColumns, renameItem, fetchItemColumnText } from '../../../../lib/monday';
 import { BOARD_ID, COLUMNS, STAGE_DATE_COLUMNS, POS_VENDA_STAGE_DATE_COLUMNS } from '../../../../lib/config';
-import { buildColumnValues } from '../../../../lib/transform';
+import { buildColumnValues, camposSemColuna } from '../../../../lib/transform';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(request, { params }) {
   try {
     const fields = await request.json();
+
+    // Campo novo (v1 de prioridades) cuja coluna ainda não foi criada no
+    // monday: avisa com clareza em vez de "salvar" sem gravar nada.
+    const semColuna = camposSemColuna(fields);
+    if (semColuna.length > 0) {
+      return NextResponse.json(
+        {
+          error: `A coluna "${semColuna.join('", "')}" ainda não foi criada no monday.com deste ambiente. Rode o script scripts/criar-colunas-monday.mjs e configure as variáveis MONDAY_COL_* (ver README).`,
+        },
+        { status: 409 }
+      );
+    }
 
     // "name" é o título nativo do item, não uma coluna — não passa por
     // buildColumnValues/change_multiple_column_values, tem mutação própria

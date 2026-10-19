@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --no-warnings --test tests/*.test.mjs"
   },
   "dependencies": {
     "@hello-pangea/dnd": "16.6.0",

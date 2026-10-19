@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { fetchAllItems } from '../../../../lib/monday';
-import { BOARD_ID, COLUMNS } from '../../../../lib/config';
+import { BOARD_ID, columnIdsConfigurados } from '../../../../lib/config';
 import { flattenItem } from '../../../../lib/transform';
 
 export const dynamic = 'force-dynamic';
 
-const COLUMN_IDS = Object.values(COLUMNS);
+const COLUMN_IDS = columnIdsConfigurados();
 
 // Busca leads pelo nome/empresa para o suplemento do Word (autenticado pelo
 // mesmo cookie de sessão do painel — ver middleware.js). Reaproveita

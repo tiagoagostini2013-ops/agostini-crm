@@ -6,6 +6,22 @@ import { uploadWithRetry } from '../lib/blobUpload';
 import ProposalViewerModal from './ProposalViewerModal';
 import HandoffModal from './HandoffModal';
 import { statusLeituraRegistro, STATUS_LEITURA, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
+import {
+  TRILHAS,
+  TRILHA_LABEL,
+  TRILHA_CAMPO_DATA,
+  ACAO_MAX,
+  trilhaDoItem,
+  getAcao,
+  dataDaTrilha,
+  responsavelPadrao,
+  pendenciasProximaAcao,
+  addDaysStr,
+  diasDesde,
+  dateOnly,
+  fmtDataBR,
+  toLocalDateStr,
+} from '../lib/agenda.js';
 
 function fmtDate(d) {
   if (!d) return '';
@@ -51,10 +67,44 @@ const QUALIFY_FIELDS = [
   { key: 'cargoDecisor', label: 'Decisor identificado' },
   { key: 'segmento', label: 'Fit (segmento)' },
   { key: 'valorEstimado', label: 'Investimento estimado' },
-  { key: 'proximoFollowUp', label: 'Urgência (próximo follow-up)' },
+  // Urgência agora vem do PRAZO PREVISTO DE COMPRA — antes era o "próximo
+  // follow-up", mas são conceitos diferentes: follow-up é quando a equipe volta
+  // a falar com o cliente; prazo de compra é quando o cliente pretende comprar.
+  { key: 'prazoCompra', label: 'Urgência (prazo previsto de compra)' },
 ];
 
-export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, onClosedDeal }) {
+// Campos que o SERVIDOR atualiza por rotas dedicadas (plano de ação, datas das
+// trilhas, último contato, vendas adicionais) — quando o item muda por causa
+// delas, o formulário adota o valor novo em vez de preservar o antigo.
+const CAMPOS_GERIDOS_PELO_SERVIDOR = [
+  'planoAcao',
+  'vendasAdicionais',
+  'proximoFollowUp',
+  'dataReativacao',
+  'proximoContatoPosVenda',
+  'ultimoContato',
+];
+
+const IMPEDIMENTOS_SUGERIDOS = [
+  'Aguardando financiamento',
+  'Decisão depende de sócio/diretoria',
+  'Comparando com concorrente',
+  'Preço acima do orçamento',
+  'Aguardando projeto/layout',
+  'Prazo de entrega',
+  'Sem urgência no momento',
+];
+
+export default function LeadDrawer({
+  item,
+  meta,
+  currentUser,
+  onClose,
+  onSaved,
+  onClosedDeal,
+  onConcluirAtividade,
+  activityTick = 0,
+}) {
   const [form, setForm] = useState(() => ({ ...item }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -96,6 +146,30 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
   const [removingVendaId, setRemovingVendaId] = useState(null);
   const [vendaError, setVendaError] = useState('');
 
+  // ---- Próxima ação (v1 prioridades) ----
+  // A trilha vem do estágio SALVO do lead (item), não do que está sendo
+  // editado no formulário — o plano de ação pertence ao que já está gravado.
+  const trilha = trilhaDoItem(item);
+  const acaoSalva = getAcao(item, trilha);
+  const dataSalva = dataDaTrilha(item, trilha) || '';
+  const assinaturaAcao = JSON.stringify([trilha, acaoSalva, dataSalva]);
+  const [acaoDraft, setAcaoDraft] = useState(() => ({
+    acao: acaoSalva.acao,
+    responsavelId: acaoSalva.responsavelId || '',
+    data: dataSalva,
+    compromissoCliente: acaoSalva.compromissoCliente,
+  }));
+  const [salvandoAcao, setSalvandoAcao] = useState(false);
+  const [acaoMsg, setAcaoMsg] = useState({ tipo: '', texto: '' });
+  const [conflitoAcao, setConflitoAcao] = useState(null);
+  const [editarUltimoContato, setEditarUltimoContato] = useState(false);
+  // Anotação: por padrão conta como contato (comportamento de 21/08/2026), mas
+  // dá pra marcar como interna — fica no histórico sem carimbar "Último contato".
+  const [noteEhContato, setNoteEhContato] = useState(true);
+  const colunasProntas = meta?.colunasNovas?.pronto !== false;
+  const colunasFaltando = meta?.colunasNovas?.faltando || [];
+  const prevItemRef = useRef(item);
+
   async function handleCopyTrackLink(sendId) {
     setCopyingSendId(sendId);
     try {
@@ -113,11 +187,39 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
   }
 
   useEffect(() => {
-    setForm({ ...item });
+    // Preserva o que a pessoa já digitou e ainda não salvou quando o item é
+    // atualizado por outro caminho (ex: registrar anotação ou próxima ação) —
+    // antes isso apagava as edições pendentes do formulário.
+    setForm((f) => {
+      const prev = prevItemRef.current;
+      const merged = { ...item };
+      if (prev && prev.id === item.id) {
+        for (const k of Object.keys(f)) {
+          if (CAMPOS_GERIDOS_PELO_SERVIDOR.includes(k)) continue;
+          if (JSON.stringify(f[k]) !== JSON.stringify(prev[k])) merged[k] = f[k];
+        }
+      }
+      return merged;
+    });
+    prevItemRef.current = item;
     setError('');
     setArquivos(item.propostas || []);
     setVendasAdicionais(item.vendasAdicionais || []);
   }, [item]);
+
+  // O rascunho da próxima ação só volta ao valor salvo quando o valor SALVO
+  // muda (salvou, registrou atividade, ou alguém alterou) — não a cada
+  // re-render do item.
+  useEffect(() => {
+    setAcaoDraft({
+      acao: acaoSalva.acao,
+      responsavelId: acaoSalva.responsavelId || '',
+      data: dataSalva,
+      compromissoCliente: acaoSalva.compromissoCliente,
+    });
+    setConflitoAcao(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, assinaturaAcao]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,7 +235,7 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
     return () => {
       cancelled = true;
     };
-  }, [item.id]);
+  }, [item.id, activityTick]);
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -182,14 +284,17 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
     // token de API — então, pra saber de verdade quem escreveu, colocamos o
     // nome de quem está logado no próprio texto da anotação.
     const authorName = currentUser?.name;
-    const fullText = authorName ? `${authorName}: ${noteText.trim()}` : noteText.trim();
+    const rotulo = noteEhContato ? '' : ' (anotação interna)';
+    const fullText = authorName ? `${authorName}${rotulo}: ${noteText.trim()}` : `${rotulo ? 'Anotação interna: ' : ''}${noteText.trim()}`;
     setAddingNote(true);
     setError('');
     try {
       const res = await fetch(`/api/items/${item.id}/notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: fullText }),
+        // `contato: false` = anotação interna: fica no histórico mas não
+        // carimba "Último contato" (ver app/api/items/[id]/notes/route.js).
+        body: JSON.stringify({ text: fullText, contato: noteEhContato }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar anotação.');
@@ -211,9 +316,11 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
       // não é automático — mas se estiver vazio ou já vencido, oferece um
       // atalho de 1 clique bem na hora em que ele acabou de registrar o
       // contato (pedido do Tiago em 21/08/2026).
-      const hojeStr = new Date().toISOString().slice(0, 10);
+      // O atalho só faz sentido na trilha de vendas e quando a anotação foi um
+      // contato de verdade com o cliente.
+      const hojeStr = toLocalDateStr();
       const followUpAtual = form.proximoFollowUp ? isoDateOnly(form.proximoFollowUp) : '';
-      if (!followUpAtual || followUpAtual < hojeStr) {
+      if (noteEhContato && trilha === TRILHAS.VENDAS && (!followUpAtual || followUpAtual < hojeStr)) {
         setShowFollowUpNudge(true);
       }
     } catch (err) {
@@ -229,9 +336,8 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
   async function quickSetFollowUp(days) {
     setSettingFollowUp(true);
     try {
-      const dataFollowUp = new Date();
-      dataFollowUp.setDate(dataFollowUp.getDate() + days);
-      const proximoFollowUp = dataFollowUp.toISOString().slice(0, 10);
+      // Data local (não UTC) — à noite o toISOString() já viraria o dia seguinte.
+      const proximoFollowUp = addDaysStr(toLocalDateStr(), days);
       update('proximoFollowUp', proximoFollowUp);
       const ok = await save({ proximoFollowUp });
       if (ok) setShowFollowUpNudge(false);
@@ -383,6 +489,66 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
     }
   }
 
+  // Salva a próxima ação da trilha atual (ação concreta + responsável + data +
+  // "combinado com o cliente") pela rota dedicada — com controle de revisão pra
+  // não sobrescrever o que outra pessoa salvou nesse meio tempo. Editar o plano
+  // NÃO conta como contato com o cliente.
+  async function salvarProximaAcao() {
+    setSalvandoAcao(true);
+    setAcaoMsg({ tipo: '', texto: '' });
+    setConflitoAcao(null);
+    try {
+      const res = await fetch(`/api/items/${item.id}/proxima-acao`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          trilha,
+          ...acaoDraft,
+          expectedRev: acaoSalva.rev,
+          autor: currentUser?.name,
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 409 && data.conflito) setConflitoAcao(data.atual || {});
+      if (!res.ok) throw new Error(data.error || 'Não foi possível salvar a próxima ação.');
+      onSaved(item.id, { planoAcao: data.planoAcao, [data.campoData]: data.data });
+      setAcaoMsg({ tipo: 'ok', texto: '✅ Próxima ação salva.' });
+    } catch (err) {
+      setAcaoMsg({ tipo: 'erro', texto: err.message });
+    } finally {
+      setSalvandoAcao(false);
+    }
+  }
+
+  // Conflito: adota o valor que a outra pessoa salvou (e a revisão dele).
+  function usarValorAtual() {
+    const atual = conflitoAcao || null;
+    onSaved(item.id, { planoAcao: { ...(item.planoAcao || {}), [trilha]: atual && atual.acao !== undefined ? atual : null } });
+    setConflitoAcao(null);
+    setAcaoMsg({ tipo: '', texto: '' });
+  }
+
+  // Modo compatível (colunas novas ainda não criadas no monday): só a data da
+  // trilha de vendas, pelo PATCH de sempre.
+  async function salvarDataCompat() {
+    const ok = await save({ proximoFollowUp: acaoDraft.data || '' });
+    if (ok) setAcaoMsg({ tipo: 'ok', texto: '✅ Data salva.' });
+  }
+
+  const pendencias = pendenciasProximaAcao(item);
+  const ultimoResultado = item.planoAcao?.ultimoResultado || null;
+  const followUpAntigo = trilha !== TRILHAS.VENDAS && !dataSalva ? dateOnly(item.proximoFollowUp) : null;
+  const acaoDirty =
+    acaoDraft.acao !== acaoSalva.acao ||
+    (acaoDraft.responsavelId || '') !== (acaoSalva.responsavelId || '') ||
+    acaoDraft.data !== dataSalva ||
+    acaoDraft.compromissoCliente !== acaoSalva.compromissoCliente;
+  const respPadraoId = responsavelPadrao(item, trilha);
+  const respPadraoNome = respPadraoId ? (meta.users || []).find((u) => String(u.id) === String(respPadraoId))?.name : null;
+  const sugestoesDias = trilha === TRILHAS.REATIVACAO ? [30, 60, 90] : trilha === TRILHAS.POS_VENDA ? [7, 15, 30, 60] : [1, 3, 7, 15];
+  const hojeStr = toLocalDateStr();
+  const diasUltimoContato = diasDesde(form.ultimoContato, hojeStr);
+
   const qualifyCount = QUALIFY_FIELDS.filter((f) => form[f.key]).length;
   const isDirty = Object.keys(diff()).length > 0;
   const responsavelIds = form.responsavelIds || [];
@@ -525,6 +691,167 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
         </div>
 
         {error && <div className="banner banner-error">{error}</div>}
+
+        <div className={`drawer-section acao-section ${trilha}`} data-testid="secao-proxima-acao">
+          <h3>Próxima ação — {TRILHA_LABEL[trilha]}</h3>
+
+          {!colunasProntas && (
+            <div className="schema-warning">
+              Colunas novas ainda não criadas no monday.com deste ambiente ({colunasFaltando.join(', ')}). Rode o script
+              <code> scripts/criar-colunas-monday.mjs</code> e configure as variáveis <code>MONDAY_COL_*</code> (ver README).
+              Enquanto isso, só a data de follow-up de vendas pode ser editada aqui.
+            </div>
+          )}
+
+          {pendencias.length > 0 && (
+            <div className="pend-box" data-testid="pendencia-acao">
+              ⚠ Registro incompleto: falta {pendencias.join(', ')}. Você pode consultar e editar o lead normalmente —
+              preencha quando puder.
+            </div>
+          )}
+
+          {trilha === TRILHAS.REATIVACAO && (
+            <p className="acao-help">
+              Negócio perdido: a reativação tem agendamento próprio e <strong>não gera alerta</strong> de follow-up
+              comercial vencido.
+            </p>
+          )}
+          {trilha === TRILHAS.POS_VENDA && (
+            <p className="acao-help">
+              Cliente fechado: atividades de pós-venda. Responsável padrão: o vendedor de pós-venda do handoff.
+            </p>
+          )}
+
+          {followUpAntigo && (
+            <p className="acao-help" data-testid="followup-antigo">
+              Agendamento comercial anterior preservado: <strong>{fmtDataBR(followUpAntigo)}</strong> (sem alertas).{' '}
+              <button
+                type="button"
+                className="btn-link"
+                onClick={() => setAcaoDraft((d) => ({ ...d, data: followUpAntigo }))}
+                disabled={!colunasProntas}
+              >
+                Usar como data desta trilha
+              </button>
+            </p>
+          )}
+
+          {colunasProntas ? (
+            <>
+              <div className="field">
+                <label>
+                  Ação concreta ({acaoDraft.acao.length}/{ACAO_MAX})
+                </label>
+                <input
+                  value={acaoDraft.acao}
+                  maxLength={ACAO_MAX}
+                  placeholder={
+                    trilha === TRILHAS.REATIVACAO
+                      ? 'Ex: Retomar contato quando a obra reabrir'
+                      : trilha === TRILHAS.POS_VENDA
+                        ? 'Ex: Checar satisfação após a entrega'
+                        : 'Ex: Confirmar dimensões das placas · Validar financiamento · Apresentar condições ao decisor'
+                  }
+                  onChange={(e) => setAcaoDraft((d) => ({ ...d, acao: e.target.value }))}
+                  aria-label="Ação concreta"
+                />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Responsável pela ação</label>
+                  <select
+                    value={acaoDraft.responsavelId}
+                    onChange={(e) => setAcaoDraft((d) => ({ ...d, responsavelId: e.target.value }))}
+                    aria-label="Responsável pela ação"
+                  >
+                    <option value="">{respPadraoNome ? `Padrão: ${respPadraoNome}` : 'Sem responsável'}</option>
+                    {(meta.users || []).map((u) => (
+                      <option key={u.id} value={String(u.id)}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>{trilha === TRILHAS.REATIVACAO ? 'Reativar em' : 'Data da ação'}</label>
+                  <input
+                    type="date"
+                    value={acaoDraft.data}
+                    onChange={(e) => setAcaoDraft((d) => ({ ...d, data: e.target.value }))}
+                    aria-label="Data da ação"
+                  />
+                  <div className="quick-dates">
+                    {sugestoesDias.map((n) => (
+                      <button type="button" key={n} onClick={() => setAcaoDraft((d) => ({ ...d, data: addDaysStr(hojeStr, n) }))}>
+                        +{n}d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {trilha !== TRILHAS.REATIVACAO && (
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={acaoDraft.compromissoCliente}
+                    onChange={(e) => setAcaoDraft((d) => ({ ...d, compromissoCliente: e.target.checked }))}
+                  />
+                  Combinado com o cliente (ele espera esse retorno nessa data) — pesa mais nas prioridades
+                </label>
+              )}
+              {acaoMsg.texto && (
+                <div
+                  className={acaoMsg.tipo === 'erro' ? 'banner banner-error' : 'banner banner-info'}
+                  style={{ borderRadius: 8, margin: '8px 0' }}
+                >
+                  {acaoMsg.texto}
+                  {conflitoAcao && (
+                    <>
+                      {' '}
+                      {conflitoAcao.acao ? <>Valor atual: “{conflitoAcao.acao}”. </> : null}
+                      <button type="button" className="btn-link" onClick={usarValorAtual}>
+                        Usar o valor atual
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                <button className="btn btn-primary" disabled={!acaoDirty || salvandoAcao} onClick={salvarProximaAcao}>
+                  {salvandoAcao ? 'Salvando...' : 'Salvar próxima ação'}
+                </button>
+                <button className="btn btn-secondary" onClick={() => onConcluirAtividade?.(item.id)}>
+                  ✅ Registrar atividade realizada…
+                </button>
+              </div>
+            </>
+          ) : (
+            trilha === TRILHAS.VENDAS && (
+              <div className="field-row" style={{ alignItems: 'flex-end' }}>
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label>Data do próximo follow-up</label>
+                  <input
+                    type="date"
+                    value={acaoDraft.data}
+                    onChange={(e) => setAcaoDraft((d) => ({ ...d, data: e.target.value }))}
+                  />
+                </div>
+                <button className="btn btn-primary" disabled={acaoDraft.data === dataSalva || saving} onClick={salvarDataCompat}>
+                  Salvar data
+                </button>
+              </div>
+            )
+          )}
+
+          {ultimoResultado && (
+            <div className="acao-ultimo" data-testid="ultimo-resultado">
+              Último registro: {fmtDataBR(ultimoResultado.data)} · {ultimoResultado.canal}
+              {ultimoResultado.contatoRealizado ? ' · contato efetivo com o cliente' : ' · sem contato efetivo'}
+              {ultimoResultado.autor ? ` · ${ultimoResultado.autor}` : ''}
+              <div className="atividade-resultado">{ultimoResultado.resumo}</div>
+            </div>
+          )}
+        </div>
 
         <div className="drawer-section">
           <h3>Contato</h3>
@@ -754,8 +1081,41 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
             </div>
           </div>
 
+          <div className="resumo-qualif" data-testid="resumo-qualificacao">
+            <div>
+              <div className="rq-label">Necessidade</div>
+              <div className={`rq-value${form.produtoInteresse ? '' : ' unknown'}`}>{form.produtoInteresse || 'não informada'}</div>
+            </div>
+            <div>
+              <div className="rq-label">Decisor</div>
+              {(() => {
+                const decisorContato = (form.contatos || []).find((c) => /decid|decis|aprov/i.test(c.role || ''));
+                const partes = [decisorContato?.name, form.cargoDecisor].filter(Boolean);
+                return (
+                  <div className={`rq-value${partes.length ? '' : ' unknown'}`}>
+                    {partes.length ? partes.join(' · ') : 'não identificado'}
+                  </div>
+                );
+              })()}
+            </div>
+            <div>
+              <div className="rq-label">Investimento estimado</div>
+              <div className={`rq-value${Number(form.valorEstimado) > 0 ? '' : ' unknown'}`}>
+                {Number(form.valorEstimado) > 0
+                  ? Number(form.valorEstimado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
+                  : 'não informado'}
+              </div>
+            </div>
+            <div>
+              <div className="rq-label">Principal impedimento</div>
+              <div className={`rq-value${form.principalImpedimento ? '' : ' unknown'}`}>
+                {form.principalImpedimento || 'não informado'}
+              </div>
+            </div>
+          </div>
+
           <div className="field">
-            <label>Produto / aplicação de interesse</label>
+            <label>Necessidade — produto / aplicação de interesse</label>
             <input
               value={form.produtoInteresse || ''}
               onChange={(e) => update('produtoInteresse', e.target.value)}
@@ -806,23 +1166,79 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
               />
             </div>
           </div>
+          {!colunasProntas && (
+            <div className="schema-warning">
+              Prazo de compra e impedimento ficam disponíveis assim que as colunas novas forem criadas no monday.com
+              (ver o aviso em "Próxima ação").
+            </div>
+          )}
           <div className="field-row">
             <div className="field">
-              <label>Próximo follow-up</label>
+              <label>Prazo previsto de compra</label>
               <input
                 type="date"
-                value={form.proximoFollowUp ? isoDateOnly(form.proximoFollowUp) : ''}
-                onChange={(e) => update('proximoFollowUp', e.target.value)}
+                disabled={!colunasProntas}
+                value={form.prazoCompra ? isoDateOnly(form.prazoCompra) : ''}
+                onChange={(e) => update('prazoCompra', e.target.value)}
+                aria-label="Prazo previsto de compra"
               />
+              <div className="quick-dates">
+                {[30, 60, 90, 180].map((n) => (
+                  <button
+                    type="button"
+                    key={n}
+                    disabled={!colunasProntas}
+                    onClick={() => update('prazoCompra', addDaysStr(hojeStr, n))}
+                  >
+                    +{n}d
+                  </button>
+                ))}
+                {form.prazoCompra && colunasProntas && (
+                  <button type="button" onClick={() => update('prazoCompra', '')}>
+                    limpar
+                  </button>
+                )}
+              </div>
             </div>
             <div className="field">
-              <label>Último contato</label>
+              <label>Principal impedimento para avançar</label>
               <input
-                type="date"
-                value={form.ultimoContato ? isoDateOnly(form.ultimoContato) : ''}
-                onChange={(e) => update('ultimoContato', e.target.value)}
+                list="impedimentos-sugeridos"
+                maxLength={200}
+                disabled={!colunasProntas}
+                value={form.principalImpedimento || ''}
+                placeholder="Ex: Aguardando financiamento"
+                onChange={(e) => update('principalImpedimento', e.target.value)}
+                aria-label="Principal impedimento"
               />
+              <datalist id="impedimentos-sugeridos">
+                {IMPEDIMENTOS_SUGERIDOS.map((i) => (
+                  <option key={i} value={i} />
+                ))}
+              </datalist>
             </div>
+          </div>
+          <div className="field">
+            <label>Último contato efetivo com o cliente</label>
+            <input
+              type="date"
+              disabled={!editarUltimoContato}
+              value={form.ultimoContato ? isoDateOnly(form.ultimoContato) : ''}
+              onChange={(e) => update('ultimoContato', e.target.value)}
+              aria-label="Último contato"
+            />
+          </div>
+          <div className="contato-info" data-testid="contato-info">
+            {form.ultimoContato
+              ? `Último contato efetivo há ${diasUltimoContato} dia(s). `
+              : 'Nenhum contato efetivo registrado. '}
+            Editar o cadastro não conta como contato: use "Registrar atividade realizada" ou uma anotação marcada como
+            contato.{' '}
+            {!editarUltimoContato && (
+              <button type="button" className="btn-link" onClick={() => setEditarUltimoContato(true)}>
+                Corrigir a data manualmente
+              </button>
+            )}
           </div>
 
           {qualifyCount >= 4 && form.estagio === 'Lead' && (
@@ -983,7 +1399,11 @@ export default function LeadDrawer({ item, meta, currentUser, onClose, onSaved, 
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
           />
-          <div className="note-actions">
+          <div className="note-actions" style={{ justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <label className="check-line" style={{ margin: 0 }}>
+              <input type="checkbox" checked={noteEhContato} onChange={(e) => setNoteEhContato(e.target.checked)} />
+              Foi um contato com o cliente (atualiza "Último contato")
+            </label>
             <button
               className="btn btn-secondary"
               disabled={addingNote || !noteText.trim()}

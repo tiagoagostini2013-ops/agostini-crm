@@ -8,6 +8,7 @@ import {
   CANAIS_ORIGEM,
   MOTIVOS_PERDA,
   TIPOS_CONTATO,
+  colunasNovasStatus,
 } from '../../../lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -39,6 +40,10 @@ export async function GET() {
       canais: CANAIS_ORIGEM,
       motivos: MOTIVOS_PERDA,
       tipos: TIPOS_CONTATO,
+      // Colunas novas da v1 de prioridades (ver lib/config.js): `pronto` false
+      // = faltam colunas no monday deste ambiente; as telas novas mostram um
+      // aviso e não tentam gravar.
+      colunasNovas: colunasNovasStatus(),
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

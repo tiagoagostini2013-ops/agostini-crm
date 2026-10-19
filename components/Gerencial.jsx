@@ -65,8 +65,36 @@ function inRange(d, start, end) {
   return d && d >= start && d < end;
 }
 
+// Versão compacta do formatMoney pra rótulos de eixo/tooltip do gráfico de
+// valor semanal — "R$ 45 mil" em vez de "R$ 45.000", mais legível nos
+// espaços pequenos de eixo Y e tick.
+function formatMoneyCompact(v) {
+  const n = Number(v) || 0;
+  if (n >= 1000000) return `R$ ${(n / 1000000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`;
+  if (n >= 1000) return `R$ ${(n / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} mil`;
+  return formatMoney(n);
+}
+
+// Passo "redondo" pra eixo Y de valores em R$ — mira ~4 divisões, arredondado
+// pra 1/2/5/10 × potência de 10 (equivalente em espírito ao arredondamento já
+// usado no eixo de contagem do gráfico de evolução semanal, só que sem os
+// degraus fixos de lá, que foram calibrados pra contagens pequenas).
+function niceMoneyStep(max) {
+  if (max <= 0) return 1;
+  const rough = max / 4;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rough)));
+  const residual = rough / magnitude;
+  let niceResidual;
+  if (residual <= 1) niceResidual = 1;
+  else if (residual <= 2) niceResidual = 2;
+  else if (residual <= 5) niceResidual = 5;
+  else niceResidual = 10;
+  return niceResidual * magnitude;
+}
+
 export default function Gerencial({ items, usersById, onSelect, hasActiveFilter, onClearFilters }) {
   const [hoverIdx, setHoverIdx] = useState(null);
+  const [hoverIdxValor, setHoverIdxValor] = useState(null);
 
   // ---------- Drill-down: clicar num número mostra os leads por trás dele ----------
   // Mesmo mecanismo da aba Métricas (ver LeadListModal) — pedido do Tiago em
@@ -141,7 +169,9 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
   const kpis = useMemo(() => {
     const out = {
       novosHojeLeads: [],
+      novosHojeValor: 0,
       novos7dLeads: [],
+      novos7dValor: 0,
       qualHojeLeads: [],
       qual7dLeads: [],
       fechHojeLeads: [],
@@ -151,8 +181,16 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
     const amanha = addDays(hoje, 1);
     for (const it of itemsSemHistoricos) {
       const criado = toDateOnly(it.createdAt);
-      if (inRange(criado, hoje, amanha)) out.novosHojeLeads.push(it);
-      if (inRange(criado, seteDiasAtras, amanha)) out.novos7dLeads.push(it);
+      if (inRange(criado, hoje, amanha)) {
+        out.novosHojeLeads.push(it);
+        const v = Number(it.valorEstimado);
+        if (!Number.isNaN(v)) out.novosHojeValor += v;
+      }
+      if (inRange(criado, seteDiasAtras, amanha)) {
+        out.novos7dLeads.push(it);
+        const v = Number(it.valorEstimado);
+        if (!Number.isNaN(v)) out.novos7dValor += v;
+      }
 
       const qual = toDateOnly(it.dataQualificacao);
       if (inRange(qual, hoje, amanha)) out.qualHojeLeads.push(it);
@@ -216,6 +254,10 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
       novos: s.novosLeads.length,
       qualificados: s.qualificadosLeads.length,
       fechados: s.fechadosLeads.length,
+      valorNovos: s.novosLeads.reduce((sum, it) => {
+        const v = Number(it.valorEstimado);
+        return sum + (Number.isNaN(v) ? 0 : v);
+      }, 0),
     }));
   }, [itemsSemHistoricos, semanaInicio]);
 
@@ -238,6 +280,30 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
   }
 
   const hovered = hoverIdx !== null ? semanas[hoverIdx] : null;
+
+  // ---------- Gráfico separado: valor (R$) em novos leads por semana ----------
+  // Deliberadamente um gráfico à parte do de contagem acima, não um segundo
+  // eixo Y nele — misturar contagem e R$ no mesmo gráfico exigiria eixo duplo,
+  // que o método de dataviz do time proíbe (duas escalas diferentes viram
+  // dois gráficos, não um só com dois eixos). Mede a taxa de ENTRADA de valor
+  // no funil por semana — complementar ao forecast ponderado da aba Métricas
+  // (Fase 5, que valoriza o pipeline aberto agora × probabilidade por
+  // estágio): aqui é sobre o que está entrando, não o que já está parado lá.
+  const BAR_THICK_VALOR = 24;
+  const maxValorSemana = Math.max(1, ...semanas.map((s) => s.valorNovos));
+  const stepValor = useMemo(() => niceMoneyStep(maxValorSemana), [maxValorSemana]);
+  const yMaxValor = useMemo(() => Math.ceil(maxValorSemana / stepValor) * stepValor, [maxValorSemana, stepValor]);
+  const yTicksValor = useMemo(() => {
+    const n = 4;
+    return Array.from({ length: n + 1 }, (_, i) => Math.round((yMaxValor / n) * i));
+  }, [yMaxValor]);
+  const chartWValor = semanas.length * (BAR_THICK_VALOR + GROUP_GAP) + GROUP_GAP;
+
+  function yToPxValor(v) {
+    return CHART_PAD_TOP + (CHART_H - CHART_PAD_TOP) * (1 - v / yMaxValor);
+  }
+
+  const hoveredValor = hoverIdxValor !== null ? semanas[hoverIdxValor] : null;
 
   // ---------- Fase 7 — desempenho por vendedor ----------
   // Comparação entre pessoas: decidido com o Tiago em 20/08/2026 que isso
@@ -412,6 +478,30 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
             }
           >
             {kpis.novos7dLeads.length} nos últimos 7 dias
+          </div>
+        </div>
+        <div
+          className={`metric-card${kpis.novosHojeLeads.length ? ' card-clickable' : ''}`}
+          onClick={
+            kpis.novosHojeLeads.length ? () => openDrill('Valor em novos leads hoje', kpis.novosHojeLeads) : undefined
+          }
+          title={kpis.novosHojeLeads.length ? 'Ver os leads' : undefined}
+        >
+          <div className="metric-label">Valor em novos leads hoje</div>
+          <div className="metric-value">{formatMoney(kpis.novosHojeValor)}</div>
+          <div
+            className={kpis.novos7dLeads.length ? 'metric-sub card-clickable' : 'metric-sub'}
+            style={{ display: 'inline-block' }}
+            onClick={
+              kpis.novos7dLeads.length
+                ? (e) => {
+                    e.stopPropagation();
+                    openDrill('Valor em novos leads nos últimos 7 dias', kpis.novos7dLeads);
+                  }
+                : undefined
+            }
+          >
+            {formatMoney(kpis.novos7dValor)} nos últimos 7 dias
           </div>
         </div>
         <div
@@ -639,6 +729,138 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
                 <td>{s.novos}</td>
                 <td>{s.qualificados}</td>
                 <td>{s.fechados}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="metrics-section">
+        <h3>Valor em novos leads por semana (últimas {WEEKS} semanas)</h3>
+        <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
+          Soma o valor estimado dos leads criados em cada semana — indicador de previsibilidade: mede quanto valor
+          está ENTRANDO no funil por período, diferente do forecast ponderado da aba Métricas (que valoriza o
+          pipeline aberto agora × probabilidade por estágio). Gráfico separado do de contagem acima de propósito —
+          contagem e R$ são escalas diferentes, não cabem no mesmo eixo.
+        </p>
+
+        <div style={{ position: 'relative' }}>
+          <svg
+            viewBox={`0 0 ${chartWValor} ${CHART_H + 26}`}
+            width="100%"
+            height={CHART_H + 26}
+            role="img"
+            aria-label="Valor em novos leads por semana"
+            style={{ display: 'block', overflow: 'visible' }}
+          >
+            {yTicksValor.map((t, i) => (
+              <g key={i}>
+                <line x1={0} x2={chartWValor} y1={yToPxValor(t)} y2={yToPxValor(t)} stroke="#e1e0d9" strokeWidth={1} />
+                <text x={0} y={yToPxValor(t) - 4} fontSize="9" fill="#898781">
+                  {formatMoneyCompact(t)}
+                </text>
+              </g>
+            ))}
+            <line x1={0} x2={chartWValor} y1={CHART_H} y2={CHART_H} stroke="#c3c2b7" strokeWidth={1} />
+
+            {semanas.map((s, i) => {
+              const gx = GROUP_GAP + i * (BAR_THICK_VALOR + GROUP_GAP);
+              const isHover = hoverIdxValor === i;
+              const h = (CHART_H - CHART_PAD_TOP) * (s.valorNovos / yMaxValor);
+              const y = CHART_H - h;
+              return (
+                <g key={i}>
+                  <rect
+                    x={gx - GROUP_GAP / 2}
+                    y={0}
+                    width={BAR_THICK_VALOR + GROUP_GAP}
+                    height={CHART_H}
+                    fill="transparent"
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Semana de ${fmtShort(s.start)}: ${formatMoney(s.valorNovos)} em novos leads. Clique para ver os leads.`}
+                    onMouseEnter={() => setHoverIdxValor(i)}
+                    onMouseLeave={() => setHoverIdxValor((cur) => (cur === i ? null : cur))}
+                    onFocus={() => setHoverIdxValor(i)}
+                    onBlur={() => setHoverIdxValor((cur) => (cur === i ? null : cur))}
+                    onClick={() =>
+                      openDrill(
+                        `Novos leads na semana de ${fmtShort(s.start)} a ${fmtShort(addDays(s.end, -1))}`,
+                        s.novosLeads
+                      )
+                    }
+                    style={{ cursor: 'pointer' }}
+                  />
+                  {isHover && (
+                    <rect
+                      x={gx - GROUP_GAP / 2}
+                      y={0}
+                      width={BAR_THICK_VALOR + GROUP_GAP}
+                      height={CHART_H}
+                      fill="#2a78d6"
+                      opacity={0.06}
+                      pointerEvents="none"
+                    />
+                  )}
+                  <rect
+                    x={gx}
+                    y={h > 0 ? y : CHART_H - 1}
+                    width={BAR_THICK_VALOR}
+                    height={h > 0 ? h : 1}
+                    rx={4}
+                    fill={COLORS.novos}
+                    opacity={isHover || hoverIdxValor === null ? 1 : 0.35}
+                    pointerEvents="none"
+                  />
+                  <text x={gx + BAR_THICK_VALOR / 2} y={CHART_H + 16} fontSize="9" fill="#898781" textAnchor="middle">
+                    {fmtShort(s.start)}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+
+          {hoveredValor && (
+            <div
+              className="gerencial-tooltip"
+              style={{
+                left: `${((GROUP_GAP + hoverIdxValor * (BAR_THICK_VALOR + GROUP_GAP) + BAR_THICK_VALOR / 2) / chartWValor) * 100}%`,
+              }}
+            >
+              <div className="gerencial-tooltip-title">
+                Semana de {fmtShort(hoveredValor.start)} a {fmtShort(addDays(hoveredValor.end, -1))}
+              </div>
+              <div>
+                <i style={{ background: COLORS.novos }} /> Valor em novos leads: <strong>{formatMoney(hoveredValor.valorNovos)}</strong>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <table className="metrics-table" style={{ marginTop: 14 }}>
+          <thead>
+            <tr>
+              <th>Semana</th>
+              <th>Valor em novos leads</th>
+            </tr>
+          </thead>
+          <tbody>
+            {semanas.map((s, i) => (
+              <tr
+                key={i}
+                className="row-clickable"
+                onClick={() =>
+                  openDrill(
+                    `Novos leads na semana de ${fmtShort(s.start)} a ${fmtShort(addDays(s.end, -1))}`,
+                    s.novosLeads
+                  )
+                }
+                title="Ver os leads"
+              >
+                <td>
+                  {fmtShort(s.start)} – {fmtShort(addDays(s.end, -1))}
+                </td>
+                <td>{formatMoney(s.valorNovos)}</td>
               </tr>
             ))}
           </tbody>

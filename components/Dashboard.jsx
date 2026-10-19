@@ -7,12 +7,26 @@ import LeadDrawer from './LeadDrawer';
 import NewLeadModal from './NewLeadModal';
 import CelebrationOverlay from './CelebrationOverlay';
 import Metrics from './Metrics';
-import Agenda, { computeAgenda } from './Agenda';
+import Agenda from './Agenda';
+import ConcluirAtividadeModal from './ConcluirAtividadeModal';
 import PosVenda from './PosVenda';
 import Gerencial from './Gerencial';
 import PainelVendas from './PainelVendas';
 import { ultimoEnvio, statusLeituraRegistro, STATUS_LEITURA_LABEL, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 import { DATE_FIELDS } from '../lib/config';
+import {
+  computeAgendaPorTrilha,
+  contarAlertas,
+  alertaDoCard,
+  compararNoKanban,
+  descreverEscopo,
+  trilhaDoItem,
+  getAcao,
+  dataDaTrilha,
+  responsavelEfetivo,
+  pendenciasProximaAcao,
+  fmtDataCurta,
+} from '../lib/agenda.js';
 
 // Filtros padrão da barra superior — pedido do Tiago em 27/08/2026: filtro de
 // período por data de conferência, com o campo de data escolhido na hora
@@ -20,76 +34,10 @@ import { DATE_FIELDS } from '../lib/config';
 // pra bater números com o monday.com num intervalo específico.
 const DEFAULT_FILTERS = { responsavel: '', segmento: '', canal: '', search: '', dataCampo: 'createdAt', dataInicio: '', dataFim: '' };
 
-function daysSince(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-function dateOnly(value) {
-  if (!value) return null;
-  return String(value).slice(0, 10);
-}
-
-function todayStr() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-function fmtDatePt(dateStr) {
-  const d = dateOnly(dateStr);
-  if (!d) return '';
-  const [, m, day] = d.split('-');
-  return `${day}/${m}`;
-}
-
-// Selo de follow-up mostrado no rodapé do card — dá pra "ver" o mesmo
-// critério usado em comparePriority, então a ordem dos cards na coluna faz
-// sentido visualmente (quem tem selo vermelho/atrasado no topo, depois quem
-// tem follow-up mais próximo, por último quem não tem nada marcado).
-function followUpInfo(item) {
-  const today = todayStr();
-  const fu = dateOnly(item.proximoFollowUp);
-  if (fu) {
-    if (fu < today) return { text: `⚠ follow-up atrasado ${daysSince(item.proximoFollowUp)}d`, className: 'stale' };
-    if (fu === today) return { text: '📅 follow-up hoje', className: 'due-today' };
-    return { text: `📅 follow-up em ${fmtDatePt(fu)}`, className: 'due-future' };
-  }
-  const dias = daysSince(item.ultimoContato);
-  if (dias === null) return { text: '⚠ sem contato e sem follow-up marcado', className: 'stale' };
-  if (dias > 5) return { text: `⚠ ${dias} dias sem contato, sem follow-up marcado`, className: 'stale' };
-  // Contato recente mas sem follow-up agendado — não é urgente feito os
-  // casos acima, mas merece um lembrete visual (pedido do Tiago em
-  // 27/08/2026) numa cor diferente do vermelho de "atrasado/negligenciado",
-  // pro vendedor lembrar de marcar a próxima data antes que vire atraso.
-  return { text: '🔔 marcar follow-up', className: 'no-followup' };
-}
-
-// Ordena os cards de cada etapa por prioridade de atendimento, não por data
-// de criação (pedido do Tiago em 27/08/2026 — um CRM deve mostrar primeiro
-// quem precisa de atenção agora). Regra: quem tem follow-up mais atrasado
-// vem primeiro; sem atraso, quem tem o follow-up mais próximo vem primeiro
-// (as duas comparações são a mesma ordenação cronológica ascendente — uma
-// data no passado já "vence" uma no futuro nessa ordem, então não precisa de
-// lógica separada pra atrasado vs. não atrasado). Quem não tem follow-up
-// marcado fica por último, ordenado por quem está há mais tempo sem contato
-// — mesmo critério já usado no grupo "sem follow-up agendado" da Agenda.
-function comparePriority(a, b) {
-  const fuA = dateOnly(a.proximoFollowUp);
-  const fuB = dateOnly(b.proximoFollowUp);
-  if (fuA && fuB) return fuA.localeCompare(fuB);
-  if (fuA && !fuB) return -1;
-  if (!fuA && fuB) return 1;
-  const diasA = daysSince(a.ultimoContato);
-  const diasB = daysSince(b.ultimoContato);
-  const va = diasA === null ? Infinity : diasA;
-  const vb = diasB === null ? Infinity : diasB;
-  return vb - va;
-}
+// A lógica de follow-up/alerta do card e a ordem das colunas agora vivem em
+// lib/agenda.js (alertaDoCard e compararNoKanban) — ali elas conhecem as três
+// trilhas (vendas / reativação / pós-venda) e são cobertas por testes. Perdidos
+// e fechados não mostram mais "follow-up de vendas atrasado".
 
 function formatMoney(v) {
   const n = Number(v);
@@ -116,6 +64,11 @@ export default function Dashboard() {
   // força remontar o overlay do zero (confete + som de novo) se dois
   // fechamentos acontecerem em sequência rápida.
   const [celebration, setCelebration] = useState(null);
+  // Registrar atividade realizada (v1 prioridades) — um único modal para a
+  // Agenda, as Prioridades e o drawer. `activityTick` avisa o drawer para
+  // recarregar o histórico (a atividade vira uma atualização no monday).
+  const [atividadeAlvoId, setAtividadeAlvoId] = useState(null);
+  const [activityTick, setActivityTick] = useState(0);
 
   function celebrarFechamento({ empresa, valorEstimado }) {
     setCelebration({ empresa, valorEstimado, key: Date.now() });
@@ -190,8 +143,21 @@ export default function Dashboard() {
     });
   }, [items, filters]);
 
-  const agenda = useMemo(() => computeAgenda(items || []), [items]);
-  const alertCount = agenda.atrasados.length + agenda.semData.length;
+  // Agenda e contadores usam os MESMOS leads filtrados (antes o selo/banner
+  // contavam todos os leads e a lista só os filtrados — números que não
+  // batiam). O escopo (usuário ou equipe inteira) é descrito num único lugar.
+  const agendas = useMemo(() => computeAgendaPorTrilha(filteredItems), [filteredItems]);
+  const alertas = useMemo(() => contarAlertas(agendas), [agendas]);
+  const alertCount = alertas.total;
+
+  const escopo = useMemo(() => {
+    const outros = [];
+    if (filters.segmento) outros.push('segmento');
+    if (filters.canal) outros.push('canal');
+    if (filters.search) outros.push('busca');
+    if (filters.dataInicio || filters.dataFim) outros.push('período');
+    return descreverEscopo({ responsavelId: filters.responsavel, usersById, outrosFiltros: outros });
+  }, [filters, usersById]);
 
   const grouped = useMemo(() => {
     const map = {};
@@ -201,7 +167,7 @@ export default function Dashboard() {
       if (it.estagio && map[it.estagio]) map[it.estagio].push(it);
       else outros.push(it);
     }
-    Object.values(map).forEach((arr) => arr.sort(comparePriority));
+    Object.values(map).forEach((arr) => arr.sort((a, b) => compararNoKanban(a, b)));
     return { map, outros };
   }, [filteredItems, meta]);
 
@@ -248,6 +214,7 @@ export default function Dashboard() {
   }
 
   const selectedItem = items && selectedId ? items.find((it) => it.id === selectedId) : null;
+  const atividadeItem = items && atividadeAlvoId ? items.find((it) => it.id === atividadeAlvoId) : null;
 
   return (
     <div className="app-shell">
@@ -310,9 +277,15 @@ export default function Dashboard() {
       {!error && alertCount > 0 && view !== 'agenda' && !bannerDismissed && (
         <div className="banner banner-warning banner-dismissible">
           <span>
-            ⚠ {agenda.atrasados.length > 0 && <>{agenda.atrasados.length} lead(s) com follow-up atrasado</>}
-            {agenda.atrasados.length > 0 && agenda.semData.length > 0 && ' e '}
-            {agenda.semData.length > 0 && <>{agenda.semData.length} sem follow-up agendado</>} precisam de atenção.{' '}
+            ⚠{' '}
+            {[
+              alertas.vendasAtrasados > 0 && `${alertas.vendasAtrasados} lead(s) em vendas com follow-up atrasado`,
+              alertas.vendasSemData > 0 && `${alertas.vendasSemData} em vendas sem follow-up agendado`,
+              alertas.posVendaAtrasados > 0 && `${alertas.posVendaAtrasados} cliente(s) com contato de pós-venda atrasado`,
+            ]
+              .filter(Boolean)
+              .join(' · ')}{' '}
+            precisam de atenção ({escopo.texto.replace('Escopo: ', 'escopo: ')}). Negócios perdidos não geram este alerta.{' '}
             <button className="btn-link" onClick={() => setView('agenda')}>
               Ver agenda →
             </button>
@@ -408,7 +381,18 @@ export default function Dashboard() {
 
       {meta && items && view === 'agenda' && (
         <div className="metrics-scroll">
-          <Agenda items={filteredItems} usersById={usersById} onSelect={setSelectedId} />
+          <Agenda
+            items={filteredItems}
+            agendas={agendas}
+            usersById={usersById}
+            escopo={escopo}
+            responsavelFiltro={filters.responsavel}
+            meuId={currentUser?.mondayUserId ? String(currentUser.mondayUserId) : null}
+            onSelect={setSelectedId}
+            onConcluirAtividade={setAtividadeAlvoId}
+            onFiltrarMeus={() => setFilters((f) => ({ ...f, responsavel: String(currentUser.mondayUserId) }))}
+            onLimparResponsavel={() => setFilters((f) => ({ ...f, responsavel: '' }))}
+          />
         </div>
       )}
 
@@ -478,6 +462,16 @@ export default function Dashboard() {
                                 <div className="meta-row">
                                   {item.segmento && <span className="chip">{item.segmento}</span>}
                                   {item.canalOrigem && <span className="chip">{item.canalOrigem}</span>}
+                                  {item.prazoCompra && trilhaDoItem(item) === 'vendas' && (
+                                    <span className="chip chip-prazo" title="Prazo previsto de compra (separado do follow-up)">
+                                      🗓 compra {fmtDataCurta(item.prazoCompra)}/{String(item.prazoCompra).slice(2, 4)}
+                                    </span>
+                                  )}
+                                  {item.principalImpedimento && trilhaDoItem(item) === 'vendas' && (
+                                    <span className="chip chip-impedimento" title={`Principal impedimento: ${item.principalImpedimento}`}>
+                                      ⛔ {item.principalImpedimento}
+                                    </span>
+                                  )}
                                   {item.propostas && item.propostas.length > 0 && (
                                     <span className="chip" title="Arquivos anexados (propostas, orçamentos, layouts...)">
                                       📄 {item.propostas.length}
@@ -538,13 +532,43 @@ export default function Dashboard() {
                                   )}
                                 </div>
                                 {(() => {
-                                  const info = followUpInfo(item);
+                                  const info = alertaDoCard(item);
                                   if (!info) return null;
                                   return (
                                     <div className="footer-row" style={{ marginTop: 4 }}>
                                       <span className={info.className}>{info.text}</span>
                                     </div>
                                   );
+                                })()}
+                                {(() => {
+                                  // Resumo útil da próxima ação (só o essencial: o quê, quem,
+                                  // quando) — ou a pendência, se o registro está incompleto.
+                                  // Pendência é só sinalização: nunca impede abrir/editar.
+                                  const trilha = trilhaDoItem(item);
+                                  const acao = getAcao(item, trilha);
+                                  const data = dataDaTrilha(item, trilha);
+                                  const respId = responsavelEfetivo(item, trilha);
+                                  const resp = respId ? usersById[respId]?.name?.split(' ')[0] : null;
+                                  const pend = pendenciasProximaAcao(item);
+                                  if (acao.acao) {
+                                    return (
+                                      <div className="card-next" title={acao.acao}>
+                                        → {acao.acao}
+                                        <span className="quando">
+                                          {resp ? ` · ${resp}` : ''}
+                                          {data ? ` · ${fmtDataCurta(data)}` : ''}
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+                                  if (pend.length > 0) {
+                                    return (
+                                      <div className="card-pend" title="Registro antigo/incompleto — abra o lead para definir">
+                                        ⚠ definir: {pend.join(', ')}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
                                 })()}
                               </div>
                             )}
@@ -572,6 +596,28 @@ export default function Dashboard() {
           onClose={() => setSelectedId(null)}
           onSaved={(id, patch) => updateLocalItem(id, patch)}
           onClosedDeal={celebrarFechamento}
+          onConcluirAtividade={setAtividadeAlvoId}
+          activityTick={activityTick}
+        />
+      )}
+
+      {atividadeItem && (
+        <ConcluirAtividadeModal
+          key={atividadeItem.id}
+          item={atividadeItem}
+          meta={meta}
+          currentUser={currentUser}
+          onClose={() => setAtividadeAlvoId(null)}
+          onDone={(r) => {
+            // Reflete na hora no card/agenda: plano de ação novo, data da
+            // trilha (quando mudou) e último contato (só se foi efetivo).
+            const patch = { planoAcao: r.planoAcao };
+            if (r.campoData && r.data !== undefined) patch[r.campoData] = r.data;
+            if (r.ultimoContato) patch.ultimoContato = r.ultimoContato;
+            updateLocalItem(atividadeItem.id, patch);
+            setActivityTick((t) => t + 1);
+            setAtividadeAlvoId(null);
+          }}
         />
       )}
 
