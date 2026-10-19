@@ -142,6 +142,98 @@ O script é idempotente (reaproveita coluna com mesmo título e tipo), não alte
 - `npm test` — testes unitários das regras (trilhas, alertas, prioridades, plano de ação), com dados fictícios.
 - Teste ponta a ponta contra um monday **simulado** (nunca toca o monday real): `npm run build`, depois `node tests/e2e/mock-monday.mjs 4010 &`, `bash tests/e2e/start-app.sh 3100 &` e `python3 tests/e2e/run_e2e.py <token-de-sessão> <pasta-de-prints>` (requer Playwright; o token é um cookie de sessão assinado com `SESSION_SECRET=segredo-de-teste`, ver cabeçalho do script).
 
+## Atendimento e gestão de oportunidades (v2, out/2026)
+
+> Status: implementado na branch `feature/atendimento-oportunidades-v2`, testado só contra um monday **simulado** com dados fictícios. **Não publicado** e **nenhuma coluna/quadro criado no monday real.** A tela funciona em "modo compatível" enquanto a estrutura nova não existir (avisos aparecem no painel do lead).
+
+### O que mudou para o vendedor
+
+- **Painel do lead = tela da oportunidade.** O topo mostra, sem repetir campos: cliente e assunto, estágio, responsável principal (+ participantes), valor, próxima ação (responsável e data), prazo de compra, impedimento, último contato **efetivo**, última atividade e proposta vigente. Tudo vem de dados registrados; o que falta aparece como "não informado" (não há texto gerado por IA). Ações rápidas: Abrir WhatsApp, Registrar atendimento, Agendar próximo passo, Abrir proposta vigente, Histórico completo. Seções secundárias (rastreio de propostas, segmento/cargo/canal, tipo de contato) ficam recolhidas; "Salvar alterações" fica fixo no rodapé.
+- **Empresa × Contatos × Oportunidades.** Uma empresa pode ter várias oportunidades independentes (máquina, formas…) e vários contatos; cada oportunidade escolhe quais contatos participam. Contato sem empresa e lead sem empresa identificada são permitidos; CNPJ e e-mail são opcionais.
+- **Histórico único e cronológico** (anotações, atendimentos, tentativas, propostas e revisões, mudanças de estágio, vínculos de empresa). Cada evento mostra tipo, data, autor e conteúdo, e é classificado como *contato efetivo*, *tentativa*, *registro interno*, *não classificado* ou *sistema*.
+- **Propostas.** Os arquivos anexados continuam na coluna de arquivos; o registro só os **classifica** (número, revisão, situação rascunho/enviada/substituída/aceita, qual é a referência comercial vigente). DOCX+PDF de mesmo nome = o mesmo documento; revisão ≠ alternativa técnica; valores nunca são somados nem copiados para a oportunidade; possível duplicata é só sinalizada (nada é excluído); aceite só por confirmação manual, e visualização do link é sempre "estimada".
+- **Registrar atendimento** (reaproveita o formulário de atividade): tipo, resultado, contato efetivo × tentativa, e (opcional) próximo passo. Concluir a ação planejada fica registrado no histórico; sem próximo passo o lead fica marcado como **pendente**. Datas usam dias úteis (com feriados nacionais) e **nunca sobrescrevem um retorno combinado com o cliente** sem confirmação.
+
+Regra de ouro do "último contato efetivo": só um atendimento registrado como contato efetivo (ou anotação marcada como contato) atualiza essa data. **Edição cadastral, abrir WhatsApp, ver proposta e tentativa sem resposta não atualizam.**
+
+### Onde cada informação é guardada (fonte única de verdade)
+
+| Informação | Fonte da verdade | Observação |
+|---|---|---|
+| Oportunidade | item do quadro do CRM (o mesmo de sempre; IDs, arquivos, histórico e links preservados) | nada migrado |
+| Assunto + contatos da oportunidade | coluna `Oportunidade (JSON)` (texto longo, compacto, com revisão) | `MONDAY_COL_OPORTUNIDADE` |
+| Vínculo oportunidade → empresa | coluna `Empresa ID` (texto; guarda só o id) | `MONDAY_COL_EMPRESA_ID`; o texto antigo da empresa é preservado |
+| Empresa (nome, CNPJ, cidade) | quadro **Empresas (CRM Agostini)**, 1 item por empresa | `MONDAY_EMPRESAS_BOARD_ID`, `MONDAY_EMPRESAS_COL_CNPJ`, `MONDAY_EMPRESAS_COL_CIDADE` |
+| Contato (nome, telefone, e-mail, papel, empresa) | quadro **Contatos (CRM Agostini)**, 1 item por contato | `MONDAY_CONTATOS_BOARD_ID`, `MONDAY_CONTATOS_COL_TELEFONE`, `_EMAIL`, `_PAPEL`, `_EMPRESA_ID` |
+| Classificação de propostas | coluna `Propostas — Registro (JSON)` | `MONDAY_COL_PROPOSTAS_REGISTRO`; os arquivos continuam na coluna de arquivos |
+| Histórico | *updates* do item no monday + datas de estágio + rastreio (derivado, não duplicado) | nenhuma coluna nova |
+| Responsável principal / participantes | coluna de pessoas existente: o 1º é o principal, os demais participam | nenhuma coluna nova |
+| Próxima ação, prazo, impedimento, reativação, pós-venda | colunas da v1 | sem duplicar |
+
+Quando uma oportunidade é vinculada a uma empresa/contato, **só o id** é gravado — telefone, nome etc. não são copiados (sem sincronização circular). Os contatos antigos (JSON legado no lead) continuam visíveis enquanto o quadro de Contatos não estiver configurado.
+
+### Variáveis de ambiente novas (Vercel → Settings → Environment Variables)
+
+| Variável | Para quê | Sem ela |
+|---|---|---|
+| `MONDAY_COL_EMPRESA_ID` | vínculo oportunidade → empresa | vínculo desativado (aviso) |
+| `MONDAY_COL_OPORTUNIDADE` | assunto + contatos da oportunidade | nome da oportunidade não salva (aviso) |
+| `MONDAY_COL_PROPOSTAS_REGISTRO` | classificação/vigência de propostas | arquivos listados sem classificação (aviso) |
+| `MONDAY_EMPRESAS_BOARD_ID`, `MONDAY_EMPRESAS_COL_CNPJ`, `MONDAY_EMPRESAS_COL_CIDADE` | quadro de empresas | campo "empresa" segue em texto livre |
+| `MONDAY_CONTATOS_BOARD_ID`, `MONDAY_CONTATOS_COL_TELEFONE`, `MONDAY_CONTATOS_COL_EMAIL`, `MONDAY_CONTATOS_COL_PAPEL`, `MONDAY_CONTATOS_COL_EMPRESA_ID` | quadro de contatos | editor antigo de "Contatos e papéis" continua |
+
+Todas as credenciais continuam só no servidor (`MONDAY_API_TOKEN`, `SESSION_SECRET`); nada novo vai para o navegador. As rotas novas respeitam a sessão (e `requireAdmin` nas de sugestões de vínculo).
+
+### Criar a estrutura no monday (uma vez; só depois do OK)
+
+```
+MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-estrutura-oportunidades.mjs          # só mostra o que faria
+MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-estrutura-oportunidades.mjs --criar  # cria o que falta
+```
+
+Idempotente (reaproveita pelo título/tipo; aceita quadros já existentes via `MONDAY_EMPRESAS_BOARD_ID`/`MONDAY_CONTATOS_BOARD_ID`), não altera nem apaga nada e imprime as linhas de variáveis para colar na Vercel (depois, redeploy). **Recuperação:** se uma coluna for apagada ou trocada de tipo no monday, o painel avisa o que falta (`/api/meta` → `estruturaV2`) e volta ao modo compatível; rode o script de novo para recriar e atualize as variáveis.
+
+### Simulação de vínculos (somente leitura) antes de qualquer migração
+
+```
+MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/simular-vinculos-empresas.mjs [--json]
+```
+
+Lista (sem gravar nada): leads já vinculados, só com texto, sem empresa; vínculos **sugeridos** lead → empresa existente (confiança alta = mesmo nome normalizado; média = nomes parecidos); grupos de leads com o **mesmo** nome de empresa que poderiam virar uma empresa nova; contatos do formato antigo que seriam trazidos. Nomes apenas parecidos **nunca** são agrupados automaticamente. A mesma simulação existe em `GET /api/vinculos/sugestoes` (admin).
+
+### Plano de migração e reversão (não executado)
+
+1. Rodar `criar-estrutura-oportunidades.mjs` em dry-run e, com OK, `--criar`; configurar as variáveis na Vercel de **preview**, testar; só então produção. (Aditivo: nenhuma coluna ou dado existente muda.)
+2. Rodar a simulação e revisar a lista com a equipe comercial.
+3. Vincular **item a item pela tela** (botão "Confirmar vínculo"), ou, se preferirem em lote, aprovar uma lista específica de ids — nunca por nome parecido. Cada vínculo grava só o `Empresa ID` e uma nota "🏢 … Ref:" no histórico.
+4. Não há migração em massa de dados de produção: oportunidades, arquivos, IDs e histórico ficam onde estão.
+
+**Reversão:** (a) redeploy da versão anterior na Vercel (a v1 ignora as colunas novas); ou (b) remover as variáveis novas → o CRM volta ao modo compatível; as colunas/quadros novos podem ficar (inofensivos) ou ser apagados manualmente no monday. As notas "📑/🏢 … Ref:" já gravadas permanecem como histórico (o app nunca exclui updates).
+
+### Confiabilidade, conflitos e limites
+
+- **Falha do monday nunca vira "sucesso":** se a gravação principal falha a tela mostra o erro e preserva o que foi digitado; se só a nota de histórico falha, o painel diz que o dado foi salvo mas a nota não.
+- **Duplo clique / reenvio:** cada gravação carrega um `requestId` registrado no histórico como `Ref:`; repetir devolve o resultado já gravado, sem duplicar (há também trava local no servidor).
+- **Edição concorrente:** oportunidade, plano de ação e registro de propostas têm `rev` (409 com opção de usar o valor atual); empresas e contatos comparam o valor-base de cada campo editado.
+- **Limite do monday:** texto longo corta silenciosamente em **2.000 caracteres**. Os JSONs novos são compactos (limite interno 1.900) e, se algo vier ilegível/truncado, o app mostra aviso e **não regrava por cima**. Já existe um caso real (rastreio truncado no item 13021330142) — ver "Pendências".
+- **Horário:** "hoje", dias úteis e "quando aconteceu" usam America/Sao_Paulo (UTC-3 fixo; sem horário de verão desde 2019).
+- **Autor:** o monday registra todo *update* como do dono do token; por isso o autor vem do texto gravado ("— registrado por Fulano") e só é exibido quando bate com um usuário conhecido. Notas antigas sem autor não ganham autor inventado.
+
+### Testes da v2
+
+- `npm test` — 55 testes unitários (tempo/dias úteis, histórico, empresas/contatos, propostas, agenda, prioridades).
+- `tests/e2e/api_v2.py <token>` — 70 verificações de API contra o monday simulado (empresa com 2 contatos e 2 oportunidades independentes, lead sem empresa, histórico sem duplicidade, proposta vigente após recarregar, revisão sem herdar valor, tentativa não atualiza contato efetivo, duplo clique, conflitos, falha de gravação, sugestões somente leitura…).
+- `tests/e2e/run_e2e.py <token> <pasta>` — 88 verificações no navegador (Playwright), incluindo a tela da oportunidade, histórico, propostas, WhatsApp sem efeito, falha de sincronização e filtros.
+- Token de teste: `node tests/e2e/gerar-token.mjs > /tmp/token.txt`. Para ver o modo compatível: `V2=0 bash tests/e2e/start-app.sh 3101`.
+
+### Pendências e limitações conhecidas da v2
+
+- Estrutura nova **não existe** no monday real; scripts testados só no simulado. Nada foi validado contra o monday real.
+- Anotação livre com "Foi um contato com o cliente" marcado (padrão antigo) ainda carimba o último contato; no histórico ela aparece como "contato não classificado". Para contato de verdade, o caminho recomendado é "Registrar atendimento".
+- Escritores antigos do rastreio de propostas (`parseTrackingList`) devolvem lista vazia se o JSON estiver corrompido e poderiam sobrescrever; não foi alterado nesta etapa (a v2 só lê de forma tolerante).
+- Proteção contra duplo clique entre instâncias da Vercel depende da consulta ao `Ref:` nas últimas 40 atualizações do item (mais a trava em memória por instância).
+- Feriados estaduais/municipais não entram no cálculo de dias úteis (`FERIADOS_EXTRAS` em `lib/tempo.js`).
+
 ## Suplemento do Word (buscar cliente + vincular proposta)
 
 Como a Agostini vende de tudo, de um equipamento avulso até uma planta inteira, não existe um modelo fixo de proposta — então em vez de "gerar a proposta pronta", o suplemento dá ao vendedor uma ponte para o CRM dentro do próprio Word: buscar o cliente/lead pelo nome, inserir dados dele (empresa, produto, valor etc.) no texto onde o cursor estiver, e — quando a proposta estiver pronta — vincular o `.docx` ao lead certo no monday.com com um clique. (Só o Word mesmo — a geração automática de PDF foi removida de propósito para simplificar o fluxo; se precisar do PDF, gere direto no Word com "Salvar como" e anexe pelo painel principal, ver seção abaixo.)

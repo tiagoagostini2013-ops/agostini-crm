@@ -1,10 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MONDAY_ACCOUNT_URL, BOARD_ID_PUBLIC } from '../lib/publicConfig';
 import { uploadWithRetry } from '../lib/blobUpload';
 import ProposalViewerModal from './ProposalViewerModal';
 import HandoffModal from './HandoffModal';
+import OportunidadeResumo from './OportunidadeResumo';
+import HistoricoOportunidade from './HistoricoOportunidade';
+import PropostasPanel from './PropostasPanel';
+import EmpresaContatosPanel from './EmpresaContatosPanel';
+import { hojeSP, somaDiasUteis, proximoDiaUtilOuIgual } from '../lib/tempo.js';
 import { statusLeituraRegistro, STATUS_LEITURA, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
 import {
   TRILHAS,
@@ -104,11 +109,18 @@ export default function LeadDrawer({
   onClosedDeal,
   onConcluirAtividade,
   activityTick = 0,
+  irmas = [],
+  onAbrirOportunidade,
 }) {
   const [form, setForm] = useState(() => ({ ...item }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [notes, setNotes] = useState(null);
+  // Histórico unificado (anotações + atendimentos + propostas + estágio): lido
+  // pela rota /historico. Substitui a lista antiga de anotações.
+  const [historico, setHistorico] = useState({ carregando: true, eventos: [] });
+  const [expandirHistorico, setExpandirHistorico] = useState(false);
+  const [visaoPropostas, setVisaoPropostas] = useState(null);
+  const [arquivosReloadKey, setArquivosReloadKey] = useState(0);
   const [noteText, setNoteText] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [showFollowUpNudge, setShowFollowUpNudge] = useState(false);
@@ -221,21 +233,22 @@ export default function LeadDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, assinaturaAcao]);
 
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/items/${item.id}/historico`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Erro ao carregar o histórico.');
+      setHistorico({ carregando: false, ...data });
+    } catch (err) {
+      setHistorico((h) => ({ ...h, carregando: false, erro: err.message }));
+    }
+  }, [item.id]);
+
   useEffect(() => {
-    let cancelled = false;
-    setNotes(null);
-    fetch(`/api/items/${item.id}/notes`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) setNotes(data.notes || []);
-      })
-      .catch(() => {
-        if (!cancelled) setNotes([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [item.id, activityTick]);
+    setHistorico({ carregando: true, eventos: [] });
+    setExpandirHistorico(false);
+    carregarHistorico();
+  }, [item.id, activityTick, carregarHistorico]);
 
   function update(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -298,11 +311,8 @@ export default function LeadDrawer({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Erro ao salvar anotação.');
-      setNotes((prev) => [
-        { id: `tmp-${Date.now()}`, text: fullText, author: authorName || 'Você', createdAt: new Date().toISOString() },
-        ...(prev || []),
-      ]);
       setNoteText('');
+      carregarHistorico();
 
       // Escrever uma anotação carimba "Data Último Contato" automaticamente
       // no servidor (ver app/api/items/[id]/notes/route.js) — sincroniza
@@ -337,7 +347,7 @@ export default function LeadDrawer({
     setSettingFollowUp(true);
     try {
       // Data local (não UTC) — à noite o toISOString() já viraria o dia seguinte.
-      const proximoFollowUp = addDaysStr(toLocalDateStr(), days);
+      const proximoFollowUp = somaDiasUteis(hojeSP(), days);
       update('proximoFollowUp', proximoFollowUp);
       const ok = await save({ proximoFollowUp });
       if (ok) setShowFollowUpNudge(false);
@@ -393,6 +403,8 @@ export default function LeadDrawer({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao anexar o arquivo.');
       setArquivos(data.arquivos || []);
+      setArquivosReloadKey((k) => k + 1);
+      carregarHistorico();
     } catch (err) {
       setFileError(`Falha ao enviar "${file.name}": ${err.message}`);
     } finally {
@@ -414,6 +426,8 @@ export default function LeadDrawer({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Falha ao remover o arquivo.');
       setArquivos(data.arquivos || []);
+      setArquivosReloadKey((k) => k + 1);
+      carregarHistorico();
     } catch (err) {
       setFileError(`Falha ao remover "${file.name}": ${err.message}`);
     } finally {
@@ -535,6 +549,49 @@ export default function LeadDrawer({
     if (ok) setAcaoMsg({ tipo: 'ok', texto: '✅ Data salva.' });
   }
 
+  function irPara(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function abrirPropostaVigente() {
+    const vig = visaoPropostas?.vigente;
+    if (!vig) return;
+    const ativos = vig.arquivosInfo.filter((a) => !a.removido);
+    const f = ativos.find((a) => /\.pdf$/i.test(a.name)) || ativos[0];
+    if (f) setViewingProposal({ assetId: f.assetId, name: f.name });
+  }
+  const estruturaV2 = meta?.estruturaV2;
+  const contatosEstruturados = !!estruturaV2?.contatos?.pronto;
+  const empresasEstruturadas = !!estruturaV2?.empresas?.pronto;
+  const [nomeOpp, setNomeOpp] = useState(item.oportunidade?.nome || '');
+  const [salvandoNomeOpp, setSalvandoNomeOpp] = useState(false);
+  const [msgNomeOpp, setMsgNomeOpp] = useState('');
+  useEffect(() => {
+    setNomeOpp(item.oportunidade?.nome || '');
+    setMsgNomeOpp('');
+  }, [item.id, item.oportunidade?.nome]);
+  async function salvarNomeOpp() {
+    setSalvandoNomeOpp(true);
+    setMsgNomeOpp('');
+    try {
+      const res = await fetch(`/api/items/${item.id}/oportunidade`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expectedRev: item.oportunidade?.rev || 0, nome: nomeOpp }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 409 && data.conflito) onSaved(item.id, { oportunidade: data.atual });
+        throw new Error(data.error || 'Não foi possível salvar o nome.');
+      }
+      onSaved(item.id, { oportunidade: data.oportunidade });
+      setMsgNomeOpp('✅ Nome salvo.');
+    } catch (err) {
+      setMsgNomeOpp(err.message);
+    } finally {
+      setSalvandoNomeOpp(false);
+    }
+  }
+
   const pendencias = pendenciasProximaAcao(item);
   const ultimoResultado = item.planoAcao?.ultimoResultado || null;
   const followUpAntigo = trilha !== TRILHAS.VENDAS && !dataSalva ? dateOnly(item.proximoFollowUp) : null;
@@ -546,7 +603,7 @@ export default function LeadDrawer({
   const respPadraoId = responsavelPadrao(item, trilha);
   const respPadraoNome = respPadraoId ? (meta.users || []).find((u) => String(u.id) === String(respPadraoId))?.name : null;
   const sugestoesDias = trilha === TRILHAS.REATIVACAO ? [30, 60, 90] : trilha === TRILHAS.POS_VENDA ? [7, 15, 30, 60] : [1, 3, 7, 15];
-  const hojeStr = toLocalDateStr();
+  const hojeStr = hojeSP();
   const diasUltimoContato = diasDesde(form.ultimoContato, hojeStr);
 
   const qualifyCount = QUALIFY_FIELDS.filter((f) => form[f.key]).length;
@@ -638,13 +695,8 @@ export default function LeadDrawer({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: noteBody }),
         });
-        const data = await res.json();
-        if (res.ok) {
-          setNotes((prev) => [
-            { id: `tmp-${Date.now()}`, text: noteBody, author: authorName, createdAt: new Date().toISOString() },
-            ...(prev || []),
-          ]);
-        }
+        await res.json().catch(() => ({}));
+        if (res.ok) carregarHistorico();
       } catch {
         // A entrega já foi salva com sucesso — se só a anotação falhar, não
         // travamos o fluxo por isso (mesma lógica de addNote/handleFileSelected).
@@ -692,7 +744,21 @@ export default function LeadDrawer({
 
         {error && <div className="banner banner-error">{error}</div>}
 
-        <div className={`drawer-section acao-section ${trilha}`} data-testid="secao-proxima-acao">
+        <OportunidadeResumo
+          item={item}
+          meta={meta}
+          historico={historico}
+          propostas={visaoPropostas}
+          onRegistrar={() => onConcluirAtividade?.(item.id)}
+          onAgendar={() => irPara('secao-proxima-acao')}
+          onAbrirProposta={abrirPropostaVigente}
+          onHistorico={() => {
+            setExpandirHistorico(true);
+            irPara('secao-historico');
+          }}
+        />
+
+        <div id="secao-proxima-acao" className={`drawer-section acao-section ${trilha}`} data-testid="secao-proxima-acao">
           <h3>Próxima ação — {TRILHA_LABEL[trilha]}</h3>
 
           {!colunasProntas && (
@@ -782,8 +848,18 @@ export default function LeadDrawer({
                   />
                   <div className="quick-dates">
                     {sugestoesDias.map((n) => (
-                      <button type="button" key={n} onClick={() => setAcaoDraft((d) => ({ ...d, data: addDaysStr(hojeStr, n) }))}>
-                        +{n}d
+                      <button
+                        type="button"
+                        key={n}
+                        title="Conta só dias úteis (sem fim de semana e feriado nacional)"
+                        onClick={() =>
+                          setAcaoDraft((d) => ({
+                            ...d,
+                            data: trilha === TRILHAS.REATIVACAO ? proximoDiaUtilOuIgual(addDaysStr(hojeStr, n)) : somaDiasUteis(hojeStr, n),
+                          }))
+                        }
+                      >
+                        {trilha === TRILHAS.REATIVACAO ? `+${n}d` : `+${n} d.u.`}
                       </button>
                     ))}
                   </div>
@@ -843,27 +919,33 @@ export default function LeadDrawer({
             )
           )}
 
-          {ultimoResultado && (
-            <div className="acao-ultimo" data-testid="ultimo-resultado">
-              Último registro: {fmtDataBR(ultimoResultado.data)} · {ultimoResultado.canal}
-              {ultimoResultado.contatoRealizado ? ' · contato efetivo com o cliente' : ' · sem contato efetivo'}
-              {ultimoResultado.autor ? ` · ${ultimoResultado.autor}` : ''}
-              <div className="atividade-resultado">{ultimoResultado.resumo}</div>
-            </div>
-          )}
         </div>
 
+        <EmpresaContatosPanel
+          item={item}
+          meta={meta}
+          irmas={irmas}
+          onSaved={(id, patch) => {
+            if (patch.empresa !== undefined) update('empresa', patch.empresa);
+            onSaved(id, patch);
+          }}
+          onAbrirOportunidade={onAbrirOportunidade}
+        />
+
         <div className="drawer-section">
-          <h3>Contato</h3>
-          <div className="field">
-            <label>Empresa</label>
-            <input value={form.empresa || ''} onChange={(e) => update('empresa', e.target.value)} />
-          </div>
-          <div className="field-row">
+          <h3>Contato principal desta conversa</h3>
+          {!empresasEstruturadas && (
             <div className="field">
-              <label>Telefone</label>
-              <input value={form.telefone || ''} onChange={(e) => update('telefone', e.target.value)} />
+              <label>Empresa</label>
+              <input value={form.empresa || ''} onChange={(e) => update('empresa', e.target.value)} />
             </div>
+          )}
+          <div className="field">
+            <label>Telefone / WhatsApp</label>
+            <input value={form.telefone || ''} onChange={(e) => update('telefone', e.target.value)} />
+          </div>
+          <details className="sec-recolhida">
+            <summary>Mais dados do contato</summary>
             <div className="field">
               <label>Tipo de contato</label>
               <select value={form.tipoContato || ''} onChange={(e) => update('tipoContato', e.target.value)}>
@@ -875,12 +957,7 @@ export default function LeadDrawer({
                 ))}
               </select>
             </div>
-          </div>
-          {item.whatsappUrl && (
-            <a className="wa-link" href={item.whatsappUrl} target="_blank" rel="noreferrer">
-              💬 Abrir WhatsApp
-            </a>
-          )}
+          </details>
           <a
             className="btn-link"
             style={{ display: 'block', marginTop: 10 }}
@@ -892,107 +969,98 @@ export default function LeadDrawer({
           </a>
         </div>
 
-        <div className="drawer-section">
-          <h3>Contatos e papéis de decisão</h3>
-          {contatos.length === 0 && (
-            <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
-              Nenhum contato cadastrado. Registre quem aprova orçamento, quem exige especificação técnica etc.
-            </div>
-          )}
-          {contatos.map((c, i) => (
-            <div key={i} className="field-row" style={{ alignItems: 'flex-end', marginBottom: 8 }}>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Nome</label>
-                <input value={c.name || ''} onChange={(e) => updateContato(i, 'name', e.target.value)} />
+        {!contatosEstruturados && (
+          <div className="drawer-section">
+            <h3>Contatos e papéis de decisão</h3>
+            {contatos.length === 0 && (
+              <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
+                Nenhum contato cadastrado. Registre quem aprova orçamento, quem exige especificação técnica etc.
               </div>
-              <div className="field" style={{ marginBottom: 0 }}>
-                <label>Papel na decisão</label>
-                <input
-                  value={c.role || ''}
-                  placeholder="Ex: aprova orçamento, exige spec técnica..."
-                  onChange={(e) => updateContato(i, 'role', e.target.value)}
-                />
-              </div>
-              <div className="field" style={{ marginBottom: 0, maxWidth: 130 }}>
-                <label>Telefone</label>
-                <input value={c.phone || ''} onChange={(e) => updateContato(i, 'phone', e.target.value)} />
-              </div>
-              <button
-                type="button"
-                className="proposta-delete-btn"
-                title="Remover contato"
-                style={{ marginBottom: 0 }}
-                onClick={() => removeContato(i)}
-              >
-                🗑️
-              </button>
-            </div>
-          ))}
-          <button type="button" className="btn btn-secondary" onClick={addContato}>
-            + Adicionar contato
-          </button>
-        </div>
-
-        <div className="drawer-section">
-          <h3>Arquivos</h3>
-          {fileError && <div className="banner banner-error">{fileError}</div>}
-          {arquivos.length === 0 && !uploadingFile && (
-            <div style={{ color: '#8a97a3', fontSize: '0.85rem', marginBottom: 8 }}>
-              Nenhum arquivo vinculado ainda. Anexe propostas, orçamentos de frete, layouts do cliente etc.
-            </div>
-          )}
-          {arquivos.length > 0 && (
-            <div className="propostas-list">
-              {arquivos.map((f) => (
-                <div key={f.assetId} className="proposta-item-row">
-                  <button type="button" className="proposta-item" onClick={() => setViewingProposal(f)}>
-                    📄 {f.name}
-                  </button>
-                  <button
-                    type="button"
-                    className="proposta-delete-btn"
-                    title="Remover arquivo"
-                    disabled={deletingAssetId === f.assetId}
-                    onClick={() => handleDeleteFile(f)}
-                  >
-                    {deletingAssetId === f.assetId ? '...' : '🗑️'}
-                  </button>
+            )}
+            {contatos.map((c, i) => (
+              <div key={i} className="field-row" style={{ alignItems: 'flex-end', marginBottom: 8 }}>
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label>Nome</label>
+                  <input value={c.name || ''} onChange={(e) => updateContato(i, 'name', e.target.value)} />
                 </div>
-              ))}
-            </div>
-          )}
-          {uploadingFile && (
-            <div style={{ color: '#037f4c', fontSize: '0.85rem', margin: '4px 0 8px' }}>
-              {uploadingFile.name}: {uploadingFile.status}{' '}
-              <button
-                type="button"
-                className="btn-link"
-                style={{ fontSize: '0.85rem' }}
-                onClick={handleCancelFileUpload}
-              >
-                Cancelar envio
-              </button>
-            </div>
-          )}
-          <input
-            type="file"
-            ref={fileInputRef}
-            style={{ display: 'none' }}
-            onChange={handleFileSelected}
-            disabled={Boolean(uploadingFile)}
-          />
-          <button
-            type="button"
-            className="btn btn-secondary"
-            disabled={Boolean(uploadingFile)}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploadingFile ? 'Enviando...' : '+ Adicionar arquivo'}
-          </button>
-        </div>
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label>Papel na decisão</label>
+                  <input
+                    value={c.role || ''}
+                    placeholder="Ex: aprova orçamento, exige spec técnica..."
+                    onChange={(e) => updateContato(i, 'role', e.target.value)}
+                  />
+                </div>
+                <div className="field" style={{ marginBottom: 0, maxWidth: 130 }}>
+                  <label>Telefone</label>
+                  <input value={c.phone || ''} onChange={(e) => updateContato(i, 'phone', e.target.value)} />
+                </div>
+                <button
+                  type="button"
+                  className="proposta-delete-btn"
+                  title="Remover contato"
+                  style={{ marginBottom: 0 }}
+                  onClick={() => removeContato(i)}
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+            <button type="button" className="btn btn-secondary" onClick={addContato}>
+              + Adicionar contato
+            </button>
+          </div>
+        )}
 
-        <div className="drawer-section">
-          <h3>Rastreio de propostas enviadas</h3>
+        {fileError && <div className="banner banner-error">{fileError}</div>}
+        <PropostasPanel
+            itemId={item.id}
+            pronto={!!estruturaV2?.propostas?.pronto}
+            faltando={estruturaV2?.propostas?.faltando || []}
+            arquivos={arquivos}
+            reloadKey={arquivosReloadKey}
+            onOpenFile={(f) => setViewingProposal(f)}
+            onDeleteFile={handleDeleteFile}
+            deletingAssetId={deletingAssetId}
+            onVisao={setVisaoPropostas}
+            uploadSlot={
+              <>
+        {uploadingFile && (
+          <div style={{ color: '#037f4c', fontSize: '0.85rem', margin: '4px 0 8px' }}>
+            {uploadingFile.name}: {uploadingFile.status}{' '}
+            <button
+              type="button"
+              className="btn-link"
+              style={{ fontSize: '0.85rem' }}
+              onClick={handleCancelFileUpload}
+            >
+              Cancelar envio
+            </button>
+          </div>
+        )}
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
+          onChange={handleFileSelected}
+          disabled={Boolean(uploadingFile)}
+        />
+        <button
+          type="button"
+          className="btn btn-secondary"
+          disabled={Boolean(uploadingFile)}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          {uploadingFile ? 'Enviando...' : '+ Adicionar arquivo'}
+        </button>
+              </>
+            }
+          />
+
+        <details className="drawer-section sec-recolhida" data-testid="rastreio-propostas">
+          <summary>
+            <h3 style={{ display: 'inline' }}>Rastreio de propostas enviadas ({rastreioPropostas.length})</h3>
+          </summary>
           <p style={{ color: 'var(--ink-soft)', fontSize: '0.8rem', marginTop: -6, marginBottom: 12 }}>
             "Visualizada" só conta quando o link é aberto de verdade num navegador — colar num grupo/conversa do
             WhatsApp não conta, só o clique do cliente. Ainda assim é uma estimativa, não uma confirmação de leitura
@@ -1064,10 +1132,10 @@ export default function LeadDrawer({
               </tbody>
             </table>
           )}
-        </div>
+        </details>
 
         <div className="drawer-section">
-          <h3>Qualificação do lead</h3>
+          <h3>Dados da oportunidade e qualificação</h3>
           <div className="qualify-panel">
             <h4>
               {qualifyCount}/5 critérios preenchidos
@@ -1081,39 +1149,32 @@ export default function LeadDrawer({
             </div>
           </div>
 
-          <div className="resumo-qualif" data-testid="resumo-qualificacao">
-            <div>
-              <div className="rq-label">Necessidade</div>
-              <div className={`rq-value${form.produtoInteresse ? '' : ' unknown'}`}>{form.produtoInteresse || 'não informada'}</div>
+          <div className="field" data-testid="campo-nome-oportunidade">
+            <label>Nome da oportunidade (assunto)</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                value={nomeOpp}
+                maxLength={120}
+                placeholder={form.produtoInteresse ? `Ex: ${form.produtoInteresse}` : 'Ex: Máquina de corte — linha 2'}
+                onChange={(e) => setNomeOpp(e.target.value)}
+                aria-label="Nome da oportunidade"
+              />
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={salvandoNomeOpp || nomeOpp.trim() === (item.oportunidade?.nome || '')}
+                onClick={salvarNomeOpp}
+              >
+                {salvandoNomeOpp ? '...' : 'Salvar nome'}
+              </button>
             </div>
-            <div>
-              <div className="rq-label">Decisor</div>
-              {(() => {
-                const decisorContato = (form.contatos || []).find((c) => /decid|decis|aprov/i.test(c.role || ''));
-                const partes = [decisorContato?.name, form.cargoDecisor].filter(Boolean);
-                return (
-                  <div className={`rq-value${partes.length ? '' : ' unknown'}`}>
-                    {partes.length ? partes.join(' · ') : 'não identificado'}
-                  </div>
-                );
-              })()}
-            </div>
-            <div>
-              <div className="rq-label">Investimento estimado</div>
-              <div className={`rq-value${Number(form.valorEstimado) > 0 ? '' : ' unknown'}`}>
-                {Number(form.valorEstimado) > 0
-                  ? Number(form.valorEstimado).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 })
-                  : 'não informado'}
+            {!estruturaV2?.oportunidade?.pronto && (
+              <div className="schema-warning">
+                A coluna "Oportunidade (JSON)" ainda não existe neste ambiente — o nome não pode ser salvo (ver README).
               </div>
-            </div>
-            <div>
-              <div className="rq-label">Principal impedimento</div>
-              <div className={`rq-value${form.principalImpedimento ? '' : ' unknown'}`}>
-                {form.principalImpedimento || 'não informado'}
-              </div>
-            </div>
+            )}
+            {msgNomeOpp && <div className="contato-info">{msgNomeOpp}</div>}
           </div>
-
           <div className="field">
             <label>Necessidade — produto / aplicação de interesse</label>
             <input
@@ -1121,6 +1182,18 @@ export default function LeadDrawer({
               onChange={(e) => update('produtoInteresse', e.target.value)}
             />
           </div>
+          <div className="field-row">
+            <div className="field">
+              <label>Valor estimado (R$)</label>
+              <input
+                type="number"
+                value={form.valorEstimado || ''}
+                onChange={(e) => update('valorEstimado', e.target.value)}
+              />
+            </div>
+          </div>
+          <details className="sec-recolhida">
+            <summary>Segmento, cargo do decisor e canal de origem</summary>
           <div className="field-row">
             <div className="field">
               <label>Segmento</label>
@@ -1145,7 +1218,7 @@ export default function LeadDrawer({
               </select>
             </div>
           </div>
-          <div className="field-row">
+          <div className="field">
             <div className="field">
               <label>Canal de origem</label>
               <select value={form.canalOrigem || ''} onChange={(e) => update('canalOrigem', e.target.value)}>
@@ -1157,15 +1230,8 @@ export default function LeadDrawer({
                 ))}
               </select>
             </div>
-            <div className="field">
-              <label>Valor estimado (R$)</label>
-              <input
-                type="number"
-                value={form.valorEstimado || ''}
-                onChange={(e) => update('valorEstimado', e.target.value)}
-              />
-            </div>
           </div>
+          </details>
           {!colunasProntas && (
             <div className="schema-warning">
               Prazo de compra e impedimento ficam disponíveis assim que as colunas novas forem criadas no monday.com
@@ -1283,6 +1349,9 @@ export default function LeadDrawer({
           </div>
           <div className="field">
             <label>Responsável(is)</label>
+            <div className="contato-info" style={{ marginTop: 0 }}>
+              O primeiro selecionado é o <strong>responsável principal</strong>; os demais aparecem como participantes.
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {meta.users.map((u) => (
                 <label
@@ -1305,10 +1374,6 @@ export default function LeadDrawer({
               ))}
             </div>
           </div>
-
-          <button className="btn btn-primary" disabled={!isDirty || saving} onClick={handleSaveClick}>
-            {saving ? 'Salvando...' : 'Salvar alterações'}
-          </button>
         </div>
 
         {item.estagio === 'Fechado' && (
@@ -1391,11 +1456,11 @@ export default function LeadDrawer({
           </div>
         )}
 
-        <div className="drawer-section">
-          <h3>Anotações</h3>
+        <div className="drawer-section" id="secao-historico">
+          <h3>Registrar anotação e histórico</h3>
           <textarea
             className="note-textarea"
-            placeholder="Registrar uma ligação, um combinado com o cliente..."
+            placeholder="Anotação livre (para registrar uma ligação ou visita, use Registrar atendimento)..."
             value={noteText}
             onChange={(e) => setNoteText(e.target.value)}
           />
@@ -1440,21 +1505,18 @@ export default function LeadDrawer({
             </div>
           )}
 
-          <div className="notes-list">
-            {notes === null && <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>Carregando...</div>}
-            {notes && notes.length === 0 && (
-              <div style={{ color: '#8a97a3', fontSize: '0.85rem' }}>Nenhuma anotação ainda.</div>
-            )}
-            {notes &&
-              notes.map((n) => (
-                <div className="note-item" key={n.id}>
-                  <div className="note-meta">
-                    {n.author} — {fmtDate(n.createdAt)}
-                  </div>
-                  <div className="note-body">{n.text}</div>
-                </div>
-              ))}
-          </div>
+          <HistoricoOportunidade
+            historico={historico}
+            expandido={expandirHistorico}
+            onToggleExpandido={() => setExpandirHistorico((v) => !v)}
+          />
+        </div>
+
+        <div className="save-bar" data-testid="barra-salvar">
+          <span className="save-bar-msg">{isDirty ? 'Há alterações não salvas' : 'Nenhuma alteração pendente'}</span>
+          <button className="btn btn-primary" disabled={!isDirty || saving} onClick={handleSaveClick}>
+            {saving ? 'Salvando...' : 'Salvar alterações'}
+          </button>
         </div>
       </div>
 

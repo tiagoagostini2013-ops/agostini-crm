@@ -60,7 +60,7 @@ with sync_playwright() as p:
     banner = page.locator('.banner-warning').first.inner_text()
     check('Banner informa o escopo (equipe inteira) e que perdidos não alertam', 'escopo: equipe inteira' in banner and 'Negócios perdidos não geram' in banner, banner)
     badge = page.locator('.view-toggle button', has_text='Agenda').locator('.toggle-badge').inner_text()
-    check('Selo da aba = vendas atrasadas(1) + vendas sem data(2) + pós-venda atrasado(1) = 4', badge == '4', badge)
+    check('Selo da aba = vendas atrasadas(1) + vendas sem data(2+2 dos 3 leads v2 de teste) + pós-venda atrasado(1) = 6', badge == '6', badge)
     page.screenshot(path=f'{SHOTS}/01-kanban.png')
 
     # ---------------- Agenda ----------------
@@ -68,7 +68,7 @@ with sync_playwright() as p:
     page.wait_for_selector('[data-testid="agenda-escopo"]')
     check('Agenda declara o escopo', 'Escopo: equipe inteira' in page.locator('[data-testid="agenda-escopo"]').inner_text())
     tabs = page.locator('.agenda-tracks button')
-    check('Aba Vendas ativas = 3', '3' in tabs.nth(0).inner_text(), tabs.nth(0).inner_text())
+    check('Aba Vendas ativas = 5 (3 originais + 2 dos leads v2 de teste)', '5' in tabs.nth(0).inner_text(), tabs.nth(0).inner_text())
     check('Aba Reativação = 1 (vencida)', '1' in tabs.nth(1).inner_text(), tabs.nth(1).inner_text())
     check('Aba Pós-venda = 1', '1' in tabs.nth(2).inner_text(), tabs.nth(2).inner_text())
 
@@ -125,16 +125,16 @@ with sync_playwright() as p:
     # ---------------- Registrar atividade: contato efetivo ----------------
     prio = page.locator('[data-testid="prioridades-hoje"]')
     prio.locator('.prio-card', has_text='Moldes Beta Teste').get_by_role('button', name=re.compile('Registrar atividade')).click()
-    modal = page.get_by_role('dialog', name='Registrar atividade realizada')
+    modal = page.get_by_role('dialog', name='Registrar atendimento')
     modal.get_by_label('Canal da atividade').select_option(label='WhatsApp')
     modal.get_by_label('Resultado da atividade').fill('Cliente confirmou o financiamento aprovado.')
-    check('Botão fica desabilitado sem informar se houve contato efetivo', modal.get_by_role('button', name='Registrar atividade').is_disabled())
+    check('Botão fica desabilitado sem informar se houve contato efetivo', modal.get_by_role('button', name='Registrar atendimento', exact=True).last.is_disabled())
     modal.get_by_label('Sim — falei com o cliente').check()
     modal.get_by_label('Próximo passo', exact=True).fill('Confirmar dimensões das placas')
     modal.get_by_label('Responsável pelo próximo passo').select_option(label='Ana Teste')
     modal.get_by_label('Data do próximo passo').fill(day(3))
     page.screenshot(path=f'{SHOTS}/05-modal-atividade.png')
-    modal.get_by_role('button', name='Registrar atividade').click()
+    modal.get_by_role('button', name='Registrar atendimento', exact=True).last.click()
     page.wait_for_selector('[role="dialog"]', state='detached')
     st = mock_state()['Moldes Beta Teste']
     plano = json.loads(st['cols']['planoAcao'])
@@ -142,20 +142,20 @@ with sync_playwright() as p:
     check('Próximo passo gravado (ação, responsável, rev+1)', plano['vendas']['acao'] == 'Confirmar dimensões das placas' and plano['vendas']['responsavelId'] == '101' and plano['vendas']['rev'] == 2, str(plano))
     check('Data do próximo follow-up atualizada', st['cols'].get('proximoFollowUp') == day(3), str(st['cols'].get('proximoFollowUp')))
     check('Resultado guardado no plano', plano['ultimoResultado']['contatoRealizado'] is True and 'financiamento' in plano['ultimoResultado']['resumo'])
-    check('Histórico registrado como atualização no monday', any('Atividade registrada por Ana Teste' in u['text'] and 'Cliente confirmou' in u['text'] for u in st['updates']), str(st['updates']))
+    check('Histórico registrado como atualização no monday', any('Atendimento registrado por Ana Teste' in u['text'] and 'Cliente confirmou' in u['text'] for u in st['updates']), str(st['updates']))
     check('Primeiro contato carimbado só se vazio (já havia último contato, não deve mudar)', st['cols'].get('dataPrimeiroContato') in (None, day(0)))
     check('Lead sai das prioridades de hoje (follow-up agora em 3 dias)', 'Moldes Beta Teste' not in [n.strip() for n in page.locator('[data-testid="prioridades-hoje"] .prio-name').all_inner_texts()])
 
     # ---------------- Tentativa sem resposta NÃO conta como contato ----------------
     mock_before = mock_state()['Delta Lead Novo Teste']
     page.locator('[data-testid="prioridades-hoje"] .prio-card', has_text='Delta Lead Novo Teste').get_by_role('button', name=re.compile('Registrar atividade')).click()
-    modal = page.get_by_role('dialog', name='Registrar atividade realizada')
+    modal = page.get_by_role('dialog', name='Registrar atendimento')
     modal.get_by_label('Canal da atividade').select_option(label='Ligação')
     modal.get_by_label('Não — tentativa sem resposta').check()
     modal.get_by_label('Resultado da atividade').fill('Liguei duas vezes, caixa postal.')
     modal.get_by_label('Próximo passo', exact=True).fill('Tentar WhatsApp amanhã')
     modal.get_by_label('Data do próximo passo').fill(day(1))
-    modal.get_by_role('button', name='Registrar atividade').click()
+    modal.get_by_role('button', name='Registrar atendimento', exact=True).last.click()
     page.wait_for_selector('[role="dialog"]', state='detached')
     st = mock_state()['Delta Lead Novo Teste']
     plano = json.loads(st['cols']['planoAcao'])
@@ -170,20 +170,20 @@ with sync_playwright() as p:
     page.wait_for_selector('[data-testid="secao-proxima-acao"]')
     drawer = page.locator('.drawer')
     check('Drawer: pendência de registro incompleto visível, sem bloquear consulta', 'falta ação concreta, data' in drawer.locator('[data-testid="pendencia-acao"]').inner_text())
-    check('Resumo de qualificação mostra campos ausentes como "não informado"', 'não informada' in drawer.locator('[data-testid="resumo-qualificacao"]').inner_text() and 'não informado' in drawer.locator('[data-testid="resumo-qualificacao"]').inner_text())
+    check('Resumo da oportunidade mostra campos ausentes como "não informado" (sem texto gerado)', 'não informad' in drawer.locator('[data-testid="opp-resumo"]').inner_text())
     drawer.get_by_role('button', name=re.compile('Registrar atividade realizada')).click()
-    modal = page.get_by_role('dialog', name='Registrar atividade realizada')
+    modal = page.get_by_role('dialog', name='Registrar atendimento')
     modal.get_by_label('Canal da atividade').select_option(label='Interno (sem contato com o cliente)')
     check('Canal interno desabilita a pergunta de contato efetivo', 'Atividade interna não conta como contato' in modal.inner_text())
     modal.get_by_label('Resultado da atividade').fill('Revisei o histórico; falta confirmar necessidade.')
-    check('Aviso de registro incompleto ao não definir próximo passo', 'registro incompleto' in modal.inner_text())
-    modal.get_by_role('button', name='Registrar atividade').click()
+    check('Aviso de registro incompleto ao não definir próximo passo', 'pendente' in modal.inner_text())
+    modal.get_by_role('button', name='Registrar atendimento', exact=True).last.click()
     page.wait_for_selector('[role="dialog"]', state='detached')
     st = mock_state()['Gama Pavimentos Teste']
     check('Atividade interna NÃO altera Último contato', st['cols'].get('ultimoContato') == day(-10), str(st['cols'].get('ultimoContato')))
     page.wait_for_timeout(500)
-    notes_txt = drawer.locator('.notes-list').inner_text()
-    check('Histórico recarregado no drawer após registrar', 'Atividade registrada por Ana Teste' in notes_txt, notes_txt[:200])
+    notes_txt = drawer.locator('[data-testid="hist-lista"]').inner_text()
+    check('Histórico recarregado no drawer após registrar', 'Revisei o histórico' in notes_txt, notes_txt[:200])
 
     # ---------------- Próxima ação pelo drawer + qualificação ----------------
     drawer.get_by_label('Ação concreta').fill('Confirmar dimensões das placas')
@@ -257,8 +257,130 @@ with sync_playwright() as p:
     page.screenshot(path=f'{SHOTS}/07-conflito.png', full_page=True)
     page.locator('.drawer .close').click()
 
-    erros_reais = [e for e in errors if '409' not in str(e)]  # o 409 é o conflito provocado de propósito
-    check('Sem erros de JavaScript no navegador (exceto o 409 provocado)', not erros_reais, str(erros_reais[:3]))
+    # =====================================================================
+    # v2 — Atendimento e gestão de oportunidades (dados fictícios, monday simulado)
+    # =====================================================================
+    page.goto(APP); page.wait_for_selector('.lead-card')
+    card('Silo de Teste Alfa').click()
+    page.wait_for_selector('[data-testid="opp-resumo"]')
+    drawer = page.locator('.drawer')
+    primeira = drawer.locator('.drawer-section').first
+    check('v2 Resumo da oportunidade é a primeira seção do painel', primeira.get_attribute('data-testid') == 'opp-resumo')
+    resumo = drawer.locator('[data-testid="opp-resumo"]').inner_text()
+    check('v2 Resumo: cliente, assunto, responsável principal, valor e próxima ação visíveis',
+          'Alfa Concreto Fictícia' in resumo and 'Central dosadora 60 m³/h' in resumo and 'Ana Teste' in resumo and 'R$' in resumo and 'Mudança feita por outra pessoa' in resumo, resumo[:300])
+    check('v2 Resumo: ações rápidas presentes',
+          all(drawer.locator(f'[data-testid="{t}"]').count() == 1 for t in ['acao-registrar-atendimento', 'acao-agendar', 'acao-historico', 'acao-abrir-proposta']))
+    irmas = drawer.locator('[data-testid="oportunidades-irmas"]')
+    check('v2 Empresa com duas oportunidades independentes: a outra aparece por vínculo (id), a sem empresa não',
+          irmas.count() == 1 and 'Formas Alfa Teste' in irmas.inner_text() and 'Lead Sem Empresa' not in irmas.inner_text(), irmas.inner_text() if irmas.count() else 'sem bloco')
+    sec_empresa = drawer.locator('[data-testid="secao-empresa"]').inner_text()
+    check('v2 Empresa com 2 contatos vinculados à oportunidade', 'Carlos Alfa' in sec_empresa and 'Diana Alfa' in sec_empresa, sec_empresa[:200])
+    page.screenshot(path=f'{SHOTS}/10-oportunidade-resumo.png', full_page=True)
+
+    # Histórico único, sem duplicidade
+    drawer.locator('[data-testid="acao-historico"]').click()
+    page.wait_for_selector('[data-testid="hist-lista"]')
+    page.wait_for_timeout(300)
+    if page.locator('[data-testid="hist-expandir"]').count():
+        page.locator('[data-testid="hist-expandir"]').click()
+    hist = drawer.locator('[data-testid="hist-lista"]').inner_text()
+    check('v2 Histórico mostra anotações antigas preservadas (sem inventar autor para nota sem prefixo)',
+          'Cliente pediu desconto de 5%' in hist and 'Contato via feira, pediu catálogo' in hist and 'conferir prazo de entrega com produção' in hist, hist[:300])
+    check('v2 Histórico sem duplicidade (nota, atendimento e envio com rastreio aparecem uma vez)',
+          hist.count('Cliente pediu desconto de 5%') == 1 and hist.count('alinhamos condições de pagamento') == 1, hist.count('alinhamos condições de pagamento'))
+    check('v2 Histórico distingue interno x efetivo', 'interno' in hist.lower() and 'efetivo' in hist.lower())
+    page.screenshot(path=f'{SHOTS}/11-historico.png', full_page=True)
+
+    # Propostas: classificar, marcar vigente, persistir após recarregar
+    st0 = mock_state()['Silo de Teste Alfa']
+    valor0 = st0['cols'].get('valorEstimado')
+    drawer.locator('[data-testid="prop-classificar"]').first.click()
+    drawer.get_by_label('Situação da proposta').select_option(label='Enviada')
+    drawer.locator('[data-testid="prop-registrar"]').click()
+    page.wait_for_selector('[data-testid="prop-doc"]')
+    if drawer.locator('[data-testid="prop-marcar-vigente"]').count():
+        drawer.locator('[data-testid="prop-marcar-vigente"]').first.click()
+        page.wait_for_timeout(500)
+    st1 = mock_state()['Silo de Teste Alfa']
+    check('v2 Registro de proposta persistido na coluna própria', bool(st1['cols'].get('propostasRegistro')), str(st1['cols'].keys()))
+    check('v2 Classificar proposta NÃO altera o valor da oportunidade', st1['cols'].get('valorEstimado') == valor0, f"{valor0} -> {st1['cols'].get('valorEstimado')}")
+    check('v2 Classificar proposta não mexe no último contato', st1['cols'].get('ultimoContato') == st0['cols'].get('ultimoContato'))
+    page.goto(APP); page.wait_for_selector('.lead-card')
+    card('Silo de Teste Alfa').click()
+    page.wait_for_selector('[data-testid="opp-proposta-vigente"]')
+    page.wait_for_timeout(500)
+    vig = drawer.locator('[data-testid="opp-proposta-vigente"]').inner_text()
+    check('v2 Proposta vigente recuperada após recarregar a página', '2026-045' in vig, vig)
+    check('v2 Botão "Abrir proposta vigente" habilitado', drawer.locator('[data-testid="acao-abrir-proposta"]').is_enabled())
+    page.screenshot(path=f'{SHOTS}/12-propostas.png', full_page=True)
+
+    # Tentativa pelo painel: não atualiza último contato; fica no histórico
+    uc_antes = mock_state()['Silo de Teste Alfa']['cols'].get('ultimoContato')
+    drawer.locator('[data-testid="acao-registrar-atendimento"]').click()
+    modal = page.get_by_role('dialog', name='Registrar atendimento')
+    modal.get_by_label('Canal da atividade').select_option(label='WhatsApp')
+    modal.get_by_label('Não — tentativa sem resposta').check()
+    modal.get_by_label('Resultado da atividade').fill('Mandei mensagem, sem resposta até agora.')
+    modal.get_by_label('Isto conclui a ação planejada', exact=False).uncheck() if modal.get_by_label('Isto conclui a ação planejada', exact=False).count() else None
+    modal.get_by_role('button', name='Registrar atendimento', exact=True).last.click()
+    page.wait_for_selector('[role="dialog"]', state='detached')
+    page.wait_for_timeout(600)
+    st2 = mock_state()['Silo de Teste Alfa']
+    check('v2 Tentativa sem resposta NÃO atualiza o último contato efetivo', st2['cols'].get('ultimoContato') == uc_antes, f"{uc_antes} -> {st2['cols'].get('ultimoContato')}")
+    plano2 = json.loads(st2['cols']['planoAcao'])
+    check('v2 Ação planejada continua ativa quando o atendimento não a conclui', plano2['vendas']['acao'] == 'Mudança feita por outra pessoa' or plano2['vendas']['acao'].startswith(('Apresentar', 'Mudan', 'Minha')), plano2['vendas']['acao'])
+    check('v2 Atendimento registrado no histórico do monday (uma vez)', sum('Mandei mensagem, sem resposta' in u['text'] for u in st2['updates']) == 1)
+    hist2 = drawer.locator('[data-testid="hist-lista"]').inner_text()
+    check('v2 Histórico do painel atualiza e rotula como tentativa', 'Mandei mensagem, sem resposta' in hist2 and 'tentativa' in hist2.lower(), hist2[:200])
+    resumo2 = drawer.locator('[data-testid="opp-ultimo-contato"]').inner_text()
+    check('v2 Resumo continua mostrando o último contato EFETIVO anterior (não a tentativa)', 'hoje' not in resumo2.lower() or uc_antes == day(0), resumo2)
+
+    # Abrir WhatsApp não registra contato
+    page.locator('.drawer .close').click()
+    card('Lead Sem Empresa').click()
+    page.wait_for_selector('[data-testid="opp-resumo"]')
+    check('v2 Lead sem empresa identificada abre normalmente (sem exigir CNPJ/e-mail)', 'Empresa não identificada' in drawer.locator('[data-testid="opp-empresa"]').inner_text())
+    wa = drawer.get_by_role('link', name=re.compile('Abrir WhatsApp'))
+    check('v2 Link do WhatsApp montado a partir do telefone', wa.count() == 1 and 'wa.me/5547988887777' in (wa.get_attribute('href') or ''), wa.get_attribute('href') if wa.count() else '')
+    antes = json.dumps(mock_state()['Lead Sem Empresa Teste'], sort_keys=True)
+    ctx.route('**/wa.me/**', lambda r: r.abort())
+    try:
+        with ctx.expect_page(timeout=3000):
+            wa.click()
+    except Exception:
+        pass
+    page.wait_for_timeout(400)
+    for extra in ctx.pages[1:]:
+        extra.close()
+    depois = json.dumps(mock_state()['Lead Sem Empresa Teste'], sort_keys=True)
+    check('v2 Abrir WhatsApp não altera nada no monday (nem último contato)', antes == depois)
+    page.screenshot(path=f'{SHOTS}/13-lead-sem-empresa.png', full_page=True)
+
+    # Falha de sincronização: erro visível, texto preservado, sem falso sucesso
+    mock_req = urllib.request.Request(MOCK + '/__fail', method='POST', data=json.dumps({'match': 'create_update', 'n': 1}).encode())
+    urllib.request.urlopen(mock_req)
+    drawer.locator('.note-textarea').fill('Anotação que vai falhar no monday')
+    n_antes = len(mock_state()['Lead Sem Empresa Teste']['updates'])
+    drawer.get_by_role('button', name='Adicionar anotação').click()
+    page.wait_for_timeout(800)
+    check('v2 Falha ao gravar no monday aparece como erro (sem falso sucesso)', drawer.locator('.banner-error').count() >= 1, drawer.inner_text()[:200])
+    check('v2 Texto digitado é preservado após a falha', drawer.locator('.note-textarea').input_value() == 'Anotação que vai falhar no monday')
+    check('v2 Nada foi gravado no monday após a falha', len(mock_state()['Lead Sem Empresa Teste']['updates']) == n_antes)
+    drawer.get_by_role('button', name='Adicionar anotação').click()
+    page.wait_for_timeout(800)
+    check('v2 Repetir depois da falha grava uma única vez', sum('Anotação que vai falhar' in u['text'] for u in mock_state()['Lead Sem Empresa Teste']['updates']) == 1)
+    page.locator('.drawer .close').click()
+
+    # Filtros e permissões como antes: busca por nome/empresa continua funcionando
+    page.get_by_placeholder(re.compile('Buscar', re.I)).first.fill('Alfa') if page.get_by_placeholder(re.compile('Buscar', re.I)).count() else None
+    page.wait_for_timeout(300)
+    nomes_visiveis = page.locator('.lead-card').all_inner_texts()
+    check('v2 Filtro de busca continua funcionando (Alfa → as duas oportunidades da empresa)',
+          any('Silo de Teste Alfa' in n for n in nomes_visiveis) and any('Formas Alfa Teste' in n for n in nomes_visiveis) and not any('Moldes Beta' in n for n in nomes_visiveis), str(len(nomes_visiveis)))
+
+    erros_reais = [e for e in errors if '409' not in str(e) and '500' not in str(e)]  # 409 (conflito) e 500 (falha injetada no monday simulado) são provocados de propósito
+    check('Sem erros de JavaScript no navegador (exceto 409 e 500 provocados)', not erros_reais, str(erros_reais[:3]))
     browser.close()
 
 fails = [r for r in results if not r[1]]

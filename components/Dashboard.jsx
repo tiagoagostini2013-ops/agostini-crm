@@ -69,6 +69,8 @@ export default function Dashboard() {
   // recarregar o histórico (a atividade vira uma atualização no monday).
   const [atividadeAlvoId, setAtividadeAlvoId] = useState(null);
   const [activityTick, setActivityTick] = useState(0);
+  // Falha ao ler o cadastro de empresas (não derruba a lista de leads).
+  const [empresasErro, setEmpresasErro] = useState('');
 
   function celebrarFechamento({ empresa, valorEstimado }) {
     setCelebration({ empresa, valorEstimado, key: Date.now() });
@@ -86,6 +88,7 @@ export default function Dashboard() {
       if (!itemsRes.ok) throw new Error(itemsData.error || 'Erro ao carregar leads.');
       setMeta(metaData);
       setItems(itemsData.items);
+      setEmpresasErro(itemsData.empresasErro || '');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -214,6 +217,20 @@ export default function Dashboard() {
   }
 
   const selectedItem = items && selectedId ? items.find((it) => it.id === selectedId) : null;
+  // Outras oportunidades da mesma empresa (só quando o vínculo é por id —
+  // nunca por semelhança de nome).
+  const irmasDoSelecionado =
+    selectedItem?.empresaId && items
+      ? items
+          .filter((it) => it.id !== selectedItem.id && it.empresaId === selectedItem.empresaId)
+          .map((it) => ({
+            id: it.id,
+            name: it.name,
+            estagio: it.estagio,
+            valor: it.valorEstimado,
+            assunto: it.oportunidade?.nome || it.produtoInteresse || '',
+          }))
+      : [];
   const atividadeItem = items && atividadeAlvoId ? items.find((it) => it.id === atividadeAlvoId) : null;
 
   return (
@@ -273,6 +290,11 @@ export default function Dashboard() {
       </div>
 
       {error && <div className="banner banner-error">{error}</div>}
+      {empresasErro && (
+        <div className="banner banner-error" data-testid="erro-empresas">
+          {empresasErro} Os leads continuam disponíveis; o vínculo com empresa usa o texto antigo até a leitura voltar.
+        </div>
+      )}
 
       {!error && alertCount > 0 && view !== 'agenda' && !bannerDismissed && (
         <div className="banner banner-warning banner-dismissible">
@@ -598,6 +620,8 @@ export default function Dashboard() {
           onClosedDeal={celebrarFechamento}
           onConcluirAtividade={setAtividadeAlvoId}
           activityTick={activityTick}
+          irmas={irmasDoSelecionado}
+          onAbrirOportunidade={(id) => setSelectedId(String(id))}
         />
       )}
 
@@ -608,15 +632,17 @@ export default function Dashboard() {
           meta={meta}
           currentUser={currentUser}
           onClose={() => setAtividadeAlvoId(null)}
-          onDone={(r) => {
+          onDone={(r, opts) => {
             // Reflete na hora no card/agenda: plano de ação novo, data da
             // trilha (quando mudou) e último contato (só se foi efetivo).
-            const patch = { planoAcao: r.planoAcao };
+            // Resposta de "já registrado" (duplo clique/reenvio) não traz plano.
+            const patch = {};
+            if (r.planoAcao) patch.planoAcao = r.planoAcao;
             if (r.campoData && r.data !== undefined) patch[r.campoData] = r.data;
             if (r.ultimoContato) patch.ultimoContato = r.ultimoContato;
-            updateLocalItem(atividadeItem.id, patch);
+            if (Object.keys(patch).length) updateLocalItem(atividadeItem.id, patch);
             setActivityTick((t) => t + 1);
-            setAtividadeAlvoId(null);
+            if (!opts?.manterAberto) setAtividadeAlvoId(null);
           }}
         />
       )}

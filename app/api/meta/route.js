@@ -9,6 +9,8 @@ import {
   MOTIVOS_PERDA,
   TIPOS_CONTATO,
   colunasNovasStatus,
+  estruturaV2Status,
+  PAPEIS_DECISAO,
 } from '../../../lib/config';
 
 export const dynamic = 'force-dynamic';
@@ -44,6 +46,10 @@ export async function GET() {
       // = faltam colunas no monday deste ambiente; as telas novas mostram um
       // aviso e não tentam gravar.
       colunasNovas: colunasNovasStatus(),
+      // v2 (atendimento e oportunidades): o que já está configurado — a tela
+      // desabilita e explica o que falta, em vez de fingir que salva.
+      estruturaV2: estruturaV2Status(),
+      papeisDecisao: PAPEIS_DECISAO,
     });
   } catch (err) {
     return NextResponse.json({ error: err.message }, { status: 500 });

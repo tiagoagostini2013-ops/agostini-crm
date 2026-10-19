@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchItemNotes, addItemNote, fetchItemColumnText, updateItemColumns } from '../../../../../lib/monday';
 import { COLUMNS, BOARD_ID } from '../../../../../lib/config';
+import { refJaRegistrada } from '../../../../../lib/estruturaServer';
+import { hojeSP } from '../../../../../lib/tempo.js';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,13 +35,21 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: 'Escreva algo antes de salvar.' }, { status: 400 });
     }
     const itemId = Number(params.id);
+    // Reenvio do texto de histórico de um atendimento cuja nota falhou: a "Ref:"
+    // impede gravar duas vezes. Esse reenvio nunca mexe em "Último contato"
+    // (o atendimento já tratou disso).
+    const refM = /^Ref: (\S+)\s*$/m.exec(text);
+    if (refM && (await refJaRegistrada(itemId, refM[1]))) {
+      return NextResponse.json({ ok: true, duplicado: true, ultimoContato: null });
+    }
     await addItemNote(itemId, text.trim());
+    if (refM) return NextResponse.json({ ok: true, ultimoContato: null });
 
     // `contato: false` = anotação INTERNA (ex: lembrete, contexto, comentário
     // pra equipe) — fica no histórico mas não carimba "Último contato", pra
     // diferenciar contato efetivo com o cliente de simples registro. Sem o
     // campo (ou true) o comportamento de sempre é mantido (pedido de 21/08).
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = hojeSP();
     let ultimoContato = null;
     if (contato === false) {
       return NextResponse.json({ ok: true, ultimoContato: null });
