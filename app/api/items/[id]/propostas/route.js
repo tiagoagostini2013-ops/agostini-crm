@@ -66,6 +66,10 @@ export async function POST(request, { params }) {
       return NextResponse.json({ conflito: true, error: 'Outra pessoa alterou as propostas desta oportunidade enquanto você editava. A lista foi recarregada.', ...paraResposta(estado) }, { status: 409 });
     }
     if (r.erro) return NextResponse.json({ error: r.erro }, { status: 400 });
+    if (r.semAlteracao) {
+      // Mesmo envio registrado de novo (duplo clique, retry): nada é gravado.
+      return NextResponse.json({ ok: true, semAlteracao: true, aviso: 'Este envio já estava registrado nessa data (nada alterado).', efeitos: [], notaRegistrada: true, ...paraResposta(estado) });
+    }
 
     await updateItemColumns(BOARD_ID, itemId, { [COLUMNS.propostasRegistro]: r.texto });
     const nota = await registrarNota(itemId, [`📑 ${r.nota} (${sessao?.name || 'alguém'})`], novaRef());

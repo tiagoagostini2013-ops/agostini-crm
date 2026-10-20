@@ -12,6 +12,7 @@ import {
 } from '../lib/agenda.js';
 import { hojeSP } from '../lib/tempo.js';
 import { SITUACAO_LABEL } from '../lib/propostas.js';
+import { origemDaAcao } from '../lib/automacao.js';
 
 // RESUMO DA OPORTUNIDADE — a primeira coisa que o vendedor vê ao abrir. Só LÊ
 // dados já registrados (nada é inferido nem gerado por IA); o que não foi
@@ -117,11 +118,18 @@ export default function OportunidadeResumo({
             {acao.acao || 'não informada'}
             {acao.compromissoCliente ? <span className="opp-tag combinado">combinado com o cliente</span> : null}
           </span>
+          {acao.acao && (
+            <div className="opp-sub" data-testid="opp-origem">
+              Origem: {origemDaAcao(acao)?.rotulo}
+              {acao.regra ? ` (regra ${acao.regra})` : ''}
+            </div>
+          )}
           <div className="opp-sub">
             {respAcao ? nomeDe(meta, respAcao) : 'sem responsável'} ·{' '}
             {dataAcao ? (
               <span className={dataAcao < hoje ? 'opp-atrasada' : ''}>
                 {fmtDataBR(dataAcao)}
+                {acao.hora ? ` às ${acao.hora}` : ''}
                 {dataAcao < hoje ? ` (atrasada ${diffDays(dataAcao, hoje)}d)` : dataAcao === hoje ? ' (hoje)' : ''}
               </span>
             ) : (

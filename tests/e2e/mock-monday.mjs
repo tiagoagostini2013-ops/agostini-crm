@@ -169,6 +169,7 @@ let appUsers = seedUsers();
 let empresas = seedEmpresas();
 let contatos = seedContatos();
 let nextId = 3000;
+let settingsItems = [{ id: '5100', name: 'Automação (teste)', created_at: isoTs(-5), updated_at: isoTs(-5), group: null, cols: {}, extra: {}, updates: [] }];
 let falhas = []; // injeção de falha: [{match, n}]
 let columnsMeta = null; // para create_column
 let quadrosCriados = {}; // quadros criados pelo script de estrutura (teste)
@@ -243,7 +244,7 @@ function applyColumnValues(item, cv) {
   item.updated_at = new Date().toISOString();
 }
 
-const todosItens = () => [...leads, ...appUsers, ...empresas, ...contatos];
+const todosItens = () => [...leads, ...appUsers, ...empresas, ...contatos, ...settingsItems];
 const achar = (id) => todosItens().find((l) => l.id === String(id));
 const boardDe = (boardId) => {
   const b = String(boardId);
@@ -319,6 +320,12 @@ function handleGraphQL(query, variables) {
       }],
     };
   }
+  // ---- item achatado (revalidação antes de gravar)
+  if (query.includes('GetItemFlat')) {
+    const it = achar(variables.itemId[0]);
+    if (!it) return { items: [] };
+    return { items: [{ id: it.id, name: it.name, created_at: it.created_at, updated_at: it.updated_at, group: it.group, column_values: leadColumnValues(it, variables.columnIds || []) }] };
+  }
   // ---- foto do item (histórico)
   if (query.includes('GetSnapshot')) {
     const it = achar(variables.itemId[0]);
@@ -376,7 +383,8 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Type', 'application/json');
     if (req.url === '/__state') return res.end(JSON.stringify(leads));
     if (req.url === '/__boards') return res.end(JSON.stringify({ empresas, contatos }));
-    if (req.url === '/__reset') { leads = seedLeads(); appUsers = seedUsers(); empresas = seedEmpresas(); contatos = seedContatos(); columnsMeta = null; quadrosCriados = {}; falhas = []; nextId = 3000; return res.end('{"ok":true}'); }
+    if (req.url === '/__seed') { const o = JSON.parse(body || '{}'); const id = String(++nextId); const it = { id, name: o.name || 'Lead de teste', created_at: isoTs(o.createdOffset ?? -20), updated_at: isoTs(-1), group: { id: 'g1', title: 'Leads' }, cols: o.cols || {}, extra: {}, updates: o.updates || [] }; if (o.files) it.files = o.files; leads.push(it); return res.end(JSON.stringify({ id })); }
+    if (req.url === '/__reset') { settingsItems.forEach((x) => { x.extra = {}; }); leads = seedLeads(); appUsers = seedUsers(); empresas = seedEmpresas(); contatos = seedContatos(); columnsMeta = null; quadrosCriados = {}; falhas = []; nextId = 3000; return res.end('{"ok":true}'); }
     // Injeção de falha: POST /__fail {"match":"create_update","n":1} faz as próximas n mutações que casam falharem.
     if (req.url === '/__fail') { const f = JSON.parse(body || '{}'); falhas = f.n ? [{ match: f.match || '*', n: f.n }] : []; return res.end('{"ok":true}'); }
     try {

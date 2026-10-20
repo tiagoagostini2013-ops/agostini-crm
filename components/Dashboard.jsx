@@ -414,6 +414,9 @@ export default function Dashboard() {
             onConcluirAtividade={setAtividadeAlvoId}
             onFiltrarMeus={() => setFilters((f) => ({ ...f, responsavel: String(currentUser.mondayUserId) }))}
             onLimparResponsavel={() => setFilters((f) => ({ ...f, responsavel: '' }))}
+            admin={!!currentUser?.admin}
+            onAplicado={updateLocalItem}
+            refreshKey={activityTick}
           />
         </div>
       )}

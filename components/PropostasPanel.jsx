@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { SITUACOES, SITUACAO_LABEL } from '../lib/propostas.js';
 import { fmtDataBR } from '../lib/agenda.js';
-import { fmtDataHoraSP } from '../lib/tempo.js';
+import { fmtDataHoraSP, hojeSP } from '../lib/tempo.js';
 
 // PROPOSTAS E ARQUIVOS — uma seção só (substitui "Arquivos"). O registro NÃO
 // guarda arquivos: só CLASSIFICA os que já estão anexados ao lead (DOCX e PDF da
@@ -149,7 +149,13 @@ export default function PropostasPanel({
                   {d.id === visao.vigente?.id && <Chip cls="vig">Vigente</Chip>}
                   {d.data && <span className="opp-sub">{fmtDataBR(d.data)}</span>}
                   {d.aceitoEm && <Chip cls="sit-aceita">Aceite confirmado em {fmtDataBR(d.aceitoEm)}</Chip>}
+                  {d.situacao === 'enviada' && d.envioEm && <Chip cls="sit-enviada" >Envio registrado em {fmtDataBR(d.envioEm)}</Chip>}
                 </div>
+                {d.situacao === 'enviada' && !d.envioEm && (
+                  <div className="opp-sub" data-testid="prop-envio-sem-data">
+                    Marcada como enviada, mas sem a <strong>data do envio</strong>. Use "Registrar envio" para informar — só um envio registrado de forma explícita gera a sugestão de follow-up.
+                  </div>
+                )}
                 <div className="prop-arqs">
                   {d.arquivosInfo.map((a) => (
                     <button key={a.assetId} type="button" className="proposta-item" disabled={a.removido} onClick={() => onOpenFile({ assetId: a.assetId, name: a.name })}>
@@ -178,12 +184,17 @@ export default function PropostasPanel({
                       Marcar como vigente
                     </button>
                   )}
+                  {(d.situacao === 'rascunho' || d.situacao === 'enviada') && (
+                    <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setForm({ modo: 'envio', id: d.id, envioEm: d.envioEm || hojeSP() })} data-testid="prop-registrar-envio">
+                      Registrar envio
+                    </button>
+                  )}
                   {d.tipo === 'principal' && (
                     <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setForm({ modo: 'revisao', id: d.id, revisao: '', data: '' })} data-testid="prop-nova-revisao">
                       Nova revisão
                     </button>
                   )}
-                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setForm({ modo: 'editar', id: d.id, situacao: d.situacao, data: d.data || '', valor: d.valor ?? '', obs: d.obs || '' })}>
+                  <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setForm({ modo: 'editar', id: d.id, situacao: d.situacao, data: d.data || '', valor: d.valor ?? '', obs: d.obs || '', envioEm: d.envioEm || '' })}>
                     Editar
                   </button>
                   {d.situacao !== 'aceita' && (
@@ -211,6 +222,20 @@ export default function PropostasPanel({
                   </button>
                 </div>
 
+                {form?.modo === 'envio' && form.id === d.id && (
+                  <div className="prop-form" data-testid="prop-form-envio">
+                    <p className="acao-help">Registre aqui quando a proposta foi <strong>enviada ao cliente</strong>. Anexar arquivo, gerar PDF, editar ou o cliente abrir o link <strong>não</strong> contam como envio. Este registro (e só ele) permite ao CRM <em>sugerir</em> um follow-up no próximo dia útil — nada é enviado ao cliente e nada é criado antes de você aceitar.</p>
+                    <div className="field-row">
+                      <div className="field"><label>Data do envio</label><input type="date" max={hojeSP()} value={form.envioEm} onChange={(e) => setForm({ ...form, envioEm: e.target.value })} aria-label="Data do envio" /></div>
+                    </div>
+                    <div className="prop-botoes">
+                      <button type="button" className="btn btn-primary" disabled={busy || !form.envioEm} onClick={() => op({ acao: 'enviar', id: d.id, data: form.envioEm })} data-testid="prop-confirmar-envio">
+                        Confirmar envio
+                      </button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>
+                    </div>
+                  </div>
+                )}
                 {novaRev && (
                   <div className="prop-form">
                     <p className="acao-help">A nova revisão nasce como <strong>rascunho</strong> e sem valor — o sistema não presume que foi enviada. Escolha os arquivos dela abaixo, em "Arquivos sem classificação", depois de criá-la.</p>
@@ -245,11 +270,14 @@ export default function PropostasPanel({
                         </select>
                       </div>
                       <div className="field"><label>Data</label><input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></div>
+                      {form.situacao === 'enviada' && (
+                        <div className="field"><label>Data do envio</label><input type="date" max={hojeSP()} value={form.envioEm || ''} onChange={(e) => setForm({ ...form, envioEm: e.target.value })} aria-label="Data do envio da proposta" /></div>
+                      )}
                       <div className="field"><label>Valor (informativo)</label><input type="number" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></div>
                     </div>
                     <div className="field"><label>Observação</label><input maxLength={80} value={form.obs} onChange={(e) => setForm({ ...form, obs: e.target.value })} /></div>
                     <div className="prop-botoes">
-                      <button type="button" className="btn btn-primary" disabled={busy} onClick={() => op({ acao: 'atualizar', id: d.id, campos: { situacao: form.situacao, data: form.data || null, valor: form.valor === '' ? null : form.valor, obs: form.obs } })}>
+                      <button type="button" className="btn btn-primary" disabled={busy} onClick={() => op({ acao: 'atualizar', id: d.id, campos: { situacao: form.situacao, data: form.data || null, valor: form.valor === '' ? null : form.valor, obs: form.obs, ...(form.situacao === 'enviada' ? { envioEm: form.envioEm || null } : {}) } })}>
                         Salvar
                       </button>
                       <button type="button" className="btn btn-secondary" onClick={() => setForm(null)}>Cancelar</button>
@@ -292,7 +320,7 @@ export default function PropostasPanel({
                     <div className="field"><label>Revisão</label><input value={form.revisao} onChange={(e) => setForm({ ...form, revisao: e.target.value })} aria-label="Revisão" /></div>
                     <div className="field">
                       <label>Situação (obrigatória)</label>
-                      <select value={form.situacao} onChange={(e) => setForm({ ...form, situacao: e.target.value })} aria-label="Situação da proposta">
+                      <select value={form.situacao} onChange={(e) => setForm({ ...form, situacao: e.target.value, envioEm: e.target.value === 'enviada' ? form.envioEm || hojeSP() : '' })} aria-label="Situação da proposta">
                         <option value="">Escolha…</option>
                         {SITUACOES.map((s) => <option key={s} value={s}>{SITUACAO_LABEL[s]}</option>)}
                       </select>
@@ -310,6 +338,9 @@ export default function PropostasPanel({
                       <div className="field"><label>Rótulo da alternativa</label><input value={form.rotulo} placeholder="ex.: com esteira" onChange={(e) => setForm({ ...form, rotulo: e.target.value })} aria-label="Rótulo da alternativa" /></div>
                     )}
                     <div className="field"><label>Data</label><input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} /></div>
+                    {form.situacao === 'enviada' && (
+                      <div className="field"><label>Data do envio (deixe vazio se não souber)</label><input type="date" max={hojeSP()} value={form.envioEm || ''} onChange={(e) => setForm({ ...form, envioEm: e.target.value })} aria-label="Data do envio da proposta" /></div>
+                    )}
                     <div className="field"><label>Valor (informativo)</label><input type="number" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} /></div>
                   </div>
                   <div className="prop-botoes">
@@ -317,7 +348,7 @@ export default function PropostasPanel({
                       type="button"
                       className="btn btn-primary"
                       disabled={busy || !form.situacao || (form.tipo === 'alternativa' && !form.rotulo.trim())}
-                      onClick={() => op({ acao: 'registrar', tipo: form.tipo, rotulo: form.rotulo, numero: form.numero, revisao: form.revisao, situacao: form.situacao, data: form.data || null, valor: form.valor === '' ? null : form.valor, arquivos: g.arquivos.map((a) => a.assetId) })}
+                      onClick={() => op({ acao: 'registrar', tipo: form.tipo, rotulo: form.rotulo, numero: form.numero, revisao: form.revisao, situacao: form.situacao, data: form.data || null, valor: form.valor === '' ? null : form.valor, ...(form.situacao === 'enviada' ? { envioEm: form.envioEm || null } : {}), arquivos: g.arquivos.map((a) => a.assetId) })}
                       data-testid="prop-registrar"
                     >
                       Registrar como proposta

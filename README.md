@@ -163,8 +163,8 @@ Regra de ouro do "último contato efetivo": só um atendimento registrado como c
 | Oportunidade | item do quadro do CRM (o mesmo de sempre; IDs, arquivos, histórico e links preservados) | nada migrado |
 | Assunto + contatos da oportunidade | coluna `Oportunidade (JSON)` (texto longo, compacto, com revisão) | `MONDAY_COL_OPORTUNIDADE` |
 | Vínculo oportunidade → empresa | coluna `Empresa ID` (texto; guarda só o id) | `MONDAY_COL_EMPRESA_ID`; o texto antigo da empresa é preservado |
-| Empresa (nome, CNPJ, cidade) | quadro **Empresas (CRM Agostini)**, 1 item por empresa | `MONDAY_EMPRESAS_BOARD_ID`, `MONDAY_EMPRESAS_COL_CNPJ`, `MONDAY_EMPRESAS_COL_CIDADE` |
-| Contato (nome, telefone, e-mail, papel, empresa) | quadro **Contatos (CRM Agostini)**, 1 item por contato | `MONDAY_CONTATOS_BOARD_ID`, `MONDAY_CONTATOS_COL_TELEFONE`, `_EMAIL`, `_PAPEL`, `_EMPRESA_ID` |
+| Empresa (nome, CNPJ, cidade) | quadro **CRM Agostini - Empresas**, 1 item por empresa | `MONDAY_EMPRESAS_BOARD_ID`, `MONDAY_EMPRESAS_COL_CNPJ`, `MONDAY_EMPRESAS_COL_CIDADE` |
+| Contato (nome, telefone, e-mail, papel, empresa) | quadro **CRM Agostini - Contatos**, 1 item por contato | `MONDAY_CONTATOS_BOARD_ID`, `MONDAY_CONTATOS_COL_TELEFONE`, `_EMAIL`, `_PAPEL`, `_EMPRESA_ID` |
 | Classificação de propostas | coluna `Propostas — Registro (JSON)` | `MONDAY_COL_PROPOSTAS_REGISTRO`; os arquivos continuam na coluna de arquivos |
 | Histórico | *updates* do item no monday + datas de estágio + rastreio (derivado, não duplicado) | nenhuma coluna nova |
 | Responsável principal / participantes | coluna de pessoas existente: o 1º é o principal, os demais participam | nenhuma coluna nova |
@@ -186,6 +186,8 @@ Todas as credenciais continuam só no servidor (`MONDAY_API_TOKEN`, `SESSION_SEC
 
 ### Criar a estrutura no monday (uma vez; só depois do OK)
 
+Nomes usados: quadros **CRM Agostini - Empresas** e **CRM Agostini - Contatos** (o quadro antigo "Contatos" da equipe é outro assunto e nunca é reaproveitado). Depois de configurar as variáveis, `scripts/validar-estrutura-oportunidades.mjs` (somente leitura) confere se cada variável aponta para uma coluna existente do tipo certo.
+
 ```
 MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-estrutura-oportunidades.mjs          # só mostra o que faria
 MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/criar-estrutura-oportunidades.mjs --criar  # cria o que falta
@@ -199,7 +201,7 @@ Idempotente (reaproveita pelo título/tipo; aceita quadros já existentes via `M
 MONDAY_API_TOKEN=... MONDAY_BOARD_ID=18404435549 node --no-warnings scripts/simular-vinculos-empresas.mjs [--json]
 ```
 
-Lista (sem gravar nada): leads já vinculados, só com texto, sem empresa; vínculos **sugeridos** lead → empresa existente (confiança alta = mesmo nome normalizado; média = nomes parecidos); grupos de leads com o **mesmo** nome de empresa que poderiam virar uma empresa nova; contatos do formato antigo que seriam trazidos. Nomes apenas parecidos **nunca** são agrupados automaticamente. A mesma simulação existe em `GET /api/vinculos/sugestoes` (admin).
+Lista (sem gravar nada): leads já vinculados, só com texto, sem empresa; vínculos **sugeridos** lead → empresa existente (confiança alta = mesmo nome normalizado; média = nomes parecidos, ignorando palavras genéricas do ramo como "pré-moldados", "artefatos" e "cimento", para não sugerir empresas diferentes só por serem do mesmo ramo); grupos de leads com o **mesmo** nome de empresa que poderiam virar uma empresa nova; contatos do formato antigo que seriam trazidos. Nomes apenas parecidos **nunca** são agrupados automaticamente. A mesma simulação existe em `GET /api/vinculos/sugestoes` (admin).
 
 ### Plano de migração e reversão (não executado)
 
@@ -233,6 +235,72 @@ Lista (sem gravar nada): leads já vinculados, só com texto, sem empresa; vínc
 - Escritores antigos do rastreio de propostas (`parseTrackingList`) devolvem lista vazia se o JSON estiver corrompido e poderiam sobrescrever; não foi alterado nesta etapa (a v2 só lê de forma tolerante).
 - Proteção contra duplo clique entre instâncias da Vercel depende da consulta ao `Ref:` nas últimas 40 atualizações do item (mais a trava em memória por instância).
 - Feriados estaduais/municipais não entram no cálculo de dias úteis (`FERIADOS_EXTRAS` em `lib/tempo.js`).
+
+## Automação do acompanhamento comercial (v3, out/2026) — modo sugestão
+
+**O que é.** O CRM passa a *sugerir* próximos passos internos (tarefas na agenda existente) a partir de eventos que já
+existem. **Não envia nada ao cliente** (nem mensagem, e-mail ou WhatsApp) e **não cria tarefa antes de alguém aceitar**.
+Não há segunda agenda nem segundo sistema de tarefas: aceitar grava a ação no mesmo plano de ação que a Agenda já lê.
+
+### Regras (gatilhos reais)
+
+| Regra | Gatilho (dado que já existe) | Sugestão |
+|---|---|---|
+| A — Follow-up de proposta | proposta com **envio registrado de forma explícita** (botão "Registrar envio", situação *enviada* + data do envio) e sem contato efetivo depois | ação na trilha de vendas, **próximo dia útil às 09:00** (horário é lembrete interno) |
+| B — Tentativa sem resposta | último registro de atendimento = *tentativa sem resposta* (canal ≠ interno) | nova tentativa **7 dias corridos** depois; se cair em dia não útil, próximo dia útil |
+| C — Compromisso combinado | ação marcada "combinada com o cliente" | nada a sugerir: é a **garantia** das demais (nunca substituída em silêncio; só com confirmação) e gera aviso se a data cair em dia não útil |
+| D — Oportunidade parada | ativa sem próxima ação (ação+data) **ou** sem contato efetivo há ≥ N dias (padrão 7, ajustável) | *destaque* (sem ação proposta); uma pendência por oportunidade; retorno futuro combinado e ação já vencida não entram |
+| E — Compra em 30 dias | "Prazo previsto de compra" entre hoje e +30 dias | *destaque* com impedimento e próxima ação existente; sem próximo passo → pede ao responsável definir (o prazo **não** substitui o follow-up) |
+| F — Venda fechada | estágio Fechado sem ação de pós-venda | pendência na trilha de pós-venda ("definir responsável e registrar compromissos comerciais"); **não** marca entrega nem mexe no fluxo de handoff/entrega |
+
+Perdida: nenhuma sugestão de prospecção. Fechada: encerra A/B/D/E. Quando A e B coincidem vale o evento mais recente.
+Cada sugestão mostra justificativa curta, a **data do evento**, a **data programada** e a **origem**: *Planejada manualmente /
+Combinada com o cliente / Sugerida por regra / Criada a partir de sugestão aceita*. **Aceitar ≠ realizar**: a ação só conta
+como feita pelo registro do atendimento.
+
+### Como funciona (e o que NÃO faz)
+
+- **Cálculo no servidor, sem depender da página aberta.** As sugestões são *derivadas* a cada consulta (`GET /api/automacao/sugestoes`)
+  do plano de ação, do registro de propostas e do último contato. Não há tarefa agendada (cron): **nenhuma notificação/lembrete é
+  disparado sozinho** — o vendedor vê as sugestões ao abrir a Agenda/oportunidade. Hospedagem: funciona na Vercel sem configuração extra.
+- **Só a decisão é gravada**: aceitas/dispensadas ficam numa lista compacta (`sg`, até 10) dentro do JSON "Plano de Ação" — sem coluna nova.
+  A mesma `chave` (regra + evento) nunca reaparece depois de aceita ou dispensada; **novo evento relevante = nova chave = nova sugestão**.
+- **Antes de aceitar**, o servidor relê o lead e recalcula: sugestão obsoleta → 409 "obsoleta"; ação criada/alterada desde a geração → 409 "estagnada";
+  ação existente / compromisso do cliente / dia não útil → exige confirmação explícita. Falha no monday = erro (`gravado:false`), sem falso sucesso.
+  `requestId` vira "Ref:" no histórico (repetição/duplo clique é ignorada). Autor = usuário da sessão.
+- **Escopo**: administrador vê tudo (filtro por responsável); os demais, só suas oportunidades; usuário sem vínculo com o monday não vê nem decide.
+- **Eventos antigos** (fora da janela, padrão 30 dias) **não** viram sugestões: ficam na "Análise prévia", que só lista com um responsável escolhido e sem ação em massa.
+- **Horário**: o monday guarda só a data. O horário (ex.: 09:00) fica no JSON do plano e a tela o chama de *lembrete interno*.
+- **Dias úteis**: America/Sao_Paulo; sábado/domingo e feriados nacionais (Carnaval, Sexta Santa, Corpus Christi incluídos) em `lib/tempo.js`;
+  feriados estaduais/municipais/pontes são cadastrados pelo administrador (Gerencial → Configurações) — também valem no registro de atendimento.
+- **Envio de proposta**: só conta o registro explícito (Propostas → "Registrar envio" ou situação *enviada* com a data do envio). Anexar arquivo,
+  gerar PDF, editar e o cliente abrir o link **não** são envio. Propostas já marcadas como enviadas sem data ficam fora (aparecem como "sem data do envio").
+
+### Visão semanal do gestor (Gerencial, só admin)
+Ativas sem próxima ação · compromissos vencidos · propostas sem avanço · compras previstas 30/60 dias · passagens de pós-venda pendentes, com filtro por
+responsável, abrir oportunidade e o **critério escrito** em cada lista. "Sem registro" não prova "sem atendimento".
+
+### Configuração (hospedagem e monday)
+| O quê | Onde | Observação |
+|---|---|---|
+| `MONDAY_AUTOMACAO_SETTINGS_ITEM_ID` | Vercel → Environment Variables | id do item de configuração (criado por `scripts/criar-item-config-automacao.mjs --criar`, dry-run por padrão; **só depois do seu OK** — cria 1 item no quadro Configurações, nenhuma coluna). Sem ela: padrões e tela somente leitura |
+| `AUTOMACAO_DESATIVADA=1` | Vercel | chave de emergência: desliga todas as regras sem mexer em dados |
+| colunas do plano/data, `MONDAY_COL_PROPOSTAS_REGISTRO` | já existentes (v1/v2) | A depende do registro de propostas (v2); D/E/F/B funcionam só com a v1 |
+
+### Como desativar sem perder histórico
+Gerencial → *Automação do acompanhamento — configurações*: desligar a regra ou a automação inteira (ou `AUTOMACAO_DESATIVADA=1`). Ações aceitas, dispensas e notas
+do histórico permanecem. Reverter a versão: redeploy do commit anterior (o JSON do plano ganhou campos opcionais que a versão antiga simplesmente ignora).
+
+### Testes da v3
+`npm test` (74) · `python3 tests/e2e/api_v3.py <token>` (86, monday simulado) · `python3 tests/e2e/run_e2e_v3.py <token> <pasta>` (34, navegador).
+Tudo contra o **monday simulado** com dados fictícios (`/__seed` do mock cria leads de teste); nada foi testado contra o monday real nem contra a Vercel.
+
+### Limitações conhecidas
+- Sem lembretes ativos (push/e-mail/WhatsApp interno) — exigiria agendador (cron) e canal de notificação.
+- Dispensar/aceitar regrava o JSON do plano (leitura→gravação); duas pessoas decidindo no mesmo milissegundo podem sobrescrever uma à outra — a checagem por revisão cobre a ação, não a lista `sg`.
+- O registro de propostas ganhou +~17 caracteres por proposta (data do envio); o teto de 1.900 do monday continua valendo (12 propostas).
+- "Data de registro" do envio é a da última atualização do registro de propostas (e do update no histórico), não um campo próprio.
+- Em produção há muitas oportunidades ativas sem próxima ação: a regra D lista as recentes (30 dias) e manda as demais para a análise prévia.
 
 ## Suplemento do Word (buscar cliente + vincular proposta)
 

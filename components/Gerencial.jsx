@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import LeadListModal from './LeadListModal';
+import AcompanhamentoSemanal from './AcompanhamentoSemanal';
+import AutomacaoConfig from './AutomacaoConfig';
 import { STAGES } from '../lib/config';
 
 function formatMoney(v) {
@@ -432,6 +434,9 @@ export default function Gerencial({ items, usersById, onSelect, hasActiveFilter,
         a partir de meados de abril de 2026) — semanas mais antigas podem aparecer artificialmente baixas. Pra um
         número que bate com o monday.com sempre, use o "Funil agora" logo abaixo.
       </div>
+
+      <AcompanhamentoSemanal usersById={usersById} onSelect={handleSelectLead} />
+      <AutomacaoConfig />
 
       <div className="metrics-section">
         <h3>Funil agora (contagem ao vivo por estágio)</h3>

@@ -15,7 +15,7 @@ test('sugestões nunca aplicam nada e respeitam leads já vinculados', () => {
   const empresas = [{ id: 'E1', nome: 'Pré-Moldados Silva Ltda' }, { id: 'E2', nome: 'Concreto Norte' }];
   const leads = [
     { id: '1', name: 'João', empresa: 'PRE MOLDADOS SILVA' },
-    { id: '2', name: 'Maria', empresa: 'Silva Pré Moldados Industriais' },
+    { id: '2', name: 'Maria', empresa: 'Silva Pré Moldados' },
     { id: '3', name: 'Zé', empresa: 'Outra Coisa' },
     { id: '4', name: 'Já ligado', empresa: 'Pré-Moldados Silva', empresaId: 'E1' },
   ];
@@ -67,4 +67,12 @@ test('registro da oportunidade respeita o limite do monday', () => {
   const ids = Array.from({ length: 20 }, (_, i) => `1234567890${i}`);
   const r = aplicarOportunidade(parseOportunidade(''), { contatoIds: ids, nome: 'x'.repeat(80) }, { autor: 'a'.repeat(30) });
   assert.ok(r.erro || serializarOportunidade(r.oportunidade).length <= LIMITE_OPP_JSON);
+});
+
+test('similaridade ignora palavras genéricas do ramo (sem falsos parecidos)', async () => {
+  const { similaridade } = await import('../lib/empresas.js');
+  assert.equal(similaridade('SGA Pré-moldados', 'Pré Moldados Tchê'), 0);
+  assert.equal(similaridade('Zanelatto Artefatos de Cimento', 'BSM Artefatos de Cimento'), 0);
+  assert.equal(similaridade('Gama Fictícia', 'Gama Pavimentos Fictícia Ltda'), 1);
+  assert.equal(similaridade('Zanelatto Artefatos', 'Zanelatto Cimento Ltda'), 1);
 });

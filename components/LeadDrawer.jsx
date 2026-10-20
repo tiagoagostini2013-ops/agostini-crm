@@ -8,6 +8,7 @@ import HandoffModal from './HandoffModal';
 import OportunidadeResumo from './OportunidadeResumo';
 import HistoricoOportunidade from './HistoricoOportunidade';
 import PropostasPanel from './PropostasPanel';
+import SugestoesAcompanhamento from './SugestoesAcompanhamento';
 import EmpresaContatosPanel from './EmpresaContatosPanel';
 import { hojeSP, somaDiasUteis, proximoDiaUtilOuIgual } from '../lib/tempo.js';
 import { statusLeituraRegistro, STATUS_LEITURA, STATUS_LEITURA_COR } from '../lib/proposalTrackStatus';
@@ -756,6 +757,17 @@ export default function LeadDrawer({
             setExpandirHistorico(true);
             irPara('secao-historico');
           }}
+        />
+
+        <SugestoesAcompanhamento
+          key={`sug-${item.id}`}
+          itemId={item.id}
+          usersById={Object.fromEntries((meta?.users || []).map((u) => [String(u.id), u]))}
+          admin={!!currentUser?.admin}
+          onSelect={() => irPara('secao-proxima-acao')}
+          onAplicado={(id, patch) => onSaved?.(id, patch)}
+          refreshKey={`${activityTick}-${item.updatedAt || ''}-${visaoPropostas?.rev ?? ''}`}
+          titulo="Próximos passos sugeridos para esta oportunidade"
         />
 
         <div id="secao-proxima-acao" className={`drawer-section acao-section ${trilha}`} data-testid="secao-proxima-acao">

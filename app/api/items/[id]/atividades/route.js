@@ -18,6 +18,7 @@ import { validarTrilha, colunaDataDaTrilha, lerAcaoDoCorpo, mensagemColunaAusent
 import { hojeSP, dataSP, fmtDataHoraSP, localSPParaISO, ehDiaUtil, proximoDiaUtilOuIgual, agoraLocalSP } from '../../../../../lib/tempo.js';
 import { refValida, refJaRegistrada, travar, soltar, registrarNota } from '../../../../../lib/estruturaServer';
 import { getSessao } from '../../../../../lib/sessao';
+import { carregarConfig } from '../../../../../lib/automacaoServer';
 
 export const dynamic = 'force-dynamic';
 
@@ -98,6 +99,9 @@ export async function POST(request, { params }) {
     if (!colData) faltando.push(TRILHA_NOVA_COLUNA_TITULO[trilha]);
     if (faltando.length) return NextResponse.json({ error: mensagemColunaAusente(faltando) }, { status: 409 });
 
+    // Feriados extras configurados pelo administrador (além dos nacionais).
+    const feriadosExtras = (await carregarConfig()).config.feriadosExtras;
+
     const itemId = Number(params.id);
     chaveTrava = `atv:${itemId}:${body.requestId}`;
     if (!travar(chaveTrava)) {
@@ -130,9 +134,9 @@ export async function POST(request, { params }) {
         );
       }
       // Fora de dia útil: só passa com confirmação (a menos que seja compromisso do cliente).
-      if (proximo.data && !ehDiaUtil(proximo.data) && !proximo.acao?.compromissoCliente && body.confirmaDiaNaoUtil !== true) {
+      if (proximo.data && !ehDiaUtil(proximo.data, feriadosExtras) && !proximo.acao?.compromissoCliente && body.confirmaDiaNaoUtil !== true) {
         return NextResponse.json(
-          { codigo: 'dia_nao_util', sugestao: proximoDiaUtilOuIgual(proximo.data), error: `${fmtDataBR(proximo.data)} não é dia útil (fim de semana ou feriado nacional). Escolha o próximo dia útil (${fmtDataBR(proximoDiaUtilOuIgual(proximo.data))}) ou confirme esta data.` },
+          { codigo: 'dia_nao_util', sugestao: proximoDiaUtilOuIgual(proximo.data, feriadosExtras), error: `${fmtDataBR(proximo.data)} não é dia útil (fim de semana ou feriado). Escolha o próximo dia útil (${fmtDataBR(proximoDiaUtilOuIgual(proximo.data, feriadosExtras))}) ou confirme esta data.` },
           { status: 409 }
         );
       }

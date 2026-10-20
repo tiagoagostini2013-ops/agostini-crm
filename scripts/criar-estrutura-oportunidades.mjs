@@ -3,8 +3,8 @@
 //
 //   1) no quadro do CRM (oportunidades): 3 colunas
 //        Empresa ID (texto) · Oportunidade (JSON) (texto longo) · Propostas — Registro (JSON) (texto longo)
-//   2) um quadro "Empresas (CRM Agostini)"  — item = empresa; colunas CNPJ e Cidade/UF (ambas opcionais)
-//   3) um quadro "Contatos (CRM Agostini)"  — item = contato; colunas Telefone, E-mail, Papel na decisão, Empresa ID
+//   2) um quadro "CRM Agostini - Empresas"  — item = empresa; colunas CNPJ e Cidade/UF (ambas opcionais)
+//   3) um quadro "CRM Agostini - Contatos"  — item = contato; colunas Telefone, E-mail, Papel na decisão, Empresa ID
 //
 // SEGURO POR PADRÃO: sem flags só CONSULTA e mostra o que seria criado (dry-run).
 // Só cria de verdade com --criar. É idempotente: reaproveita o que já existe (mesmo título e tipo)
@@ -27,13 +27,18 @@ const TOKEN = process.env.MONDAY_API_TOKEN;
 const BOARD_ID = process.env.MONDAY_BOARD_ID;
 const API_URL = process.env.MONDAY_API_URL || 'https://api.monday.com/v2';
 const CRIAR = process.argv.includes('--criar');
-const NOME_EMPRESAS = process.env.MONDAY_EMPRESAS_BOARD_NAME || 'Empresas (CRM Agostini)';
-const NOME_CONTATOS = process.env.MONDAY_CONTATOS_BOARD_NAME || 'Contatos (CRM Agostini)';
+const NOME_EMPRESAS = process.env.MONDAY_EMPRESAS_BOARD_NAME || 'CRM Agostini - Empresas';
+const NOME_CONTATOS = process.env.MONDAY_CONTATOS_BOARD_NAME || 'CRM Agostini - Contatos';
 
 if (!TOKEN || !BOARD_ID) {
   console.error('Defina MONDAY_API_TOKEN e MONDAY_BOARD_ID no ambiente.');
   process.exit(1);
 }
+
+process.on('uncaughtException', (e) => {
+  console.error(`\nErro: ${e.message}`);
+  process.exit(1);
+});
 
 async function gql(query, variables) {
   const res = await fetch(API_URL, {
@@ -91,8 +96,27 @@ async function garantirQuadro({ nome, envVar, idInformado, workspaceId, kind }) 
     linhas.push(`${envVar}=${idInformado}`);
     return String(idInformado);
   }
-  const lista = await gql('query { boards(limit: 200) { id name } }');
-  const achado = (lista.boards || []).find((b) => norm(b.name) === norm(nome));
+  // Procura por nome EXATO em TODAS as páginas (nunca cria se já existir com esse nome).
+  // O quadro antigo "Contatos" (outro assunto) tem nome diferente e nunca é reaproveitado.
+  const achados = [];
+  for (let page = 1; page <= 30; page++) {
+    const lista = await gql('query ($page: Int!) { boards(limit: 100, page: $page, state: all) { id name state } }', { page });
+    const bs = lista.boards || [];
+    achados.push(...bs.filter((b) => norm(b.name) === norm(nome)));
+    if (bs.length < 100) break;
+  }
+  const ativos = achados.filter((b) => b.state === undefined || b.state === 'active');
+  if (achados.length > ativos.length && !ativos.length) {
+    console.log(`  ! existe um quadro "${nome}" arquivado/na lixeira — não vou criar outro por cima; restaure-o ou informe o id em ${envVar}.`);
+    pendencias.push(`quadro ${nome} (arquivado)`);
+    return null;
+  }
+  if (ativos.length > 1) {
+    console.log(`  ! há ${ativos.length} quadros ativos chamados "${nome}" (${ativos.map((b) => b.id).join(', ')}) — informe qual usar em ${envVar}.`);
+    pendencias.push(`quadro ${nome} (ambíguo)`);
+    return null;
+  }
+  const achado = ativos[0];
   if (achado) {
     console.log(`  = já existe o quadro "${nome}" → ${achado.id}`);
     linhas.push(`${envVar}=${achado.id}`);

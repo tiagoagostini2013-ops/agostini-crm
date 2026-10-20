@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import PrioridadesHoje from './PrioridadesHoje';
+import SugestoesAcompanhamento from './SugestoesAcompanhamento';
+import { origemDaAcao } from '../lib/automacao.js';
 import {
   TRILHAS,
   TRILHA_LABEL,
@@ -68,6 +70,12 @@ function AgendaRow({ item, trilha, usersById, onSelect, rightLabel, onConcluirAt
           {respNome && <span> · {respNome}</span>}
         </div>
         {acao.acao && <div className="agenda-row-next">→ {acao.acao}</div>}
+        {acao.acao && (
+          <div className="agenda-row-origem" data-testid="agenda-origem">
+            {origemDaAcao(acao)?.rotulo}
+            {acao.hora ? ` · ${acao.hora} (lembrete interno)` : ''}
+          </div>
+        )}
         {pend.length > 0 && <div className="agenda-row-pend">⚠ Registro incompleto: falta {pend.join(', ')}</div>}
       </div>
       <div className="agenda-row-right">
@@ -189,6 +197,9 @@ export default function Agenda({
   onConcluirAtividade,
   onFiltrarMeus,
   onLimparResponsavel,
+  admin = false,
+  onAplicado,
+  refreshKey = 0,
 }) {
   const [trilha, setTrilha] = useState(TRILHAS.VENDAS);
   const [subView, setSubView] = useState('lista');
@@ -285,6 +296,19 @@ export default function Agenda({
           Calendário
         </button>
       </div>
+
+      {subView === 'lista' && trilha !== TRILHAS.REATIVACAO && (
+        <SugestoesAcompanhamento
+          trilha={trilha}
+          usersById={usersById}
+          admin={admin}
+          responsavelFiltro={responsavelFiltro}
+          onSelect={onSelect}
+          onAplicado={onAplicado}
+          refreshKey={refreshKey}
+          titulo={trilha === TRILHAS.POS_VENDA ? 'Pendências de passagem para pós-venda (sugestões)' : 'Próximos passos sugeridos'}
+        />
+      )}
 
       {subView === 'lista' && trilha === TRILHAS.VENDAS && (
         <PrioridadesHoje
